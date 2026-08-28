@@ -56,8 +56,6 @@
 
 针对问题四，\textbf{在问题三基础上引入节流比 $\sigma(t)\in[0.6,1]$，并正确将推进剂容量约束改写为累计推力积分约束}，以同一配点转录求解。从满推力与 80\% 推力两类初值均收敛到同一近似满推力候选解（$\sigma$ 节点位于 0.99998$\sim$1.00000），滑行时间 4.3764 s，耗药 57446.93 kg，与问题三一致。本文结合固定比冲下的重力损失机理与文献结论指出，在无最大动压、过载、热流等路径约束的本题设定下节流不产生收益；进一步讨论了加入路径约束后节流可能出现的非平凡切换结构。鉴于问题非凸，第三、四问的结论均表述为经网格一致性与独立复验支持的局部最优候选解，不作全局最优性保证。
 
-本文模型物理量纲一致、求解器与验证器统一（端到端复验残差小于 $10^{-6}$），各问结果可直接比较，可为多级运载火箭轨迹设计与推进剂优化提供参考。
-
 \keywords{运载火箭\enspace 多阶段最优控制\enspace 直接配点\enspace 入轨打靶\enspace 推力节流}
 \end{abstract}
 
@@ -437,18 +435,22 @@ F(\bm z)=0
 \section{问题三：推力方向最优控制}
 
 \subsection{连续模型及其结构}
-令 $t_b=t_3-t_2$ 为二级燃烧时间，决策对象为 $t_c$、$t_b$、状态轨迹 $\bm x(t)$ 与俯仰角函数 $\phi(t)$。标准模型为
+令 $t_b=t_3-t_2$ 为二级燃烧时间。决策对象为滑行时间 $t_c$、燃烧时间 $t_b$、状态轨迹 $\bm x(t)$ 与俯仰角函数 $\phi(t)$。目标为最小化推进剂消耗；由于二级满推力且比冲恒定，目标等价于最小化燃烧时间（见下式）。约束分为三类：动力学方程、终端入轨条件与控制量边界。综上，问题三的标准模型为
 \begin{equation}
 \begin{aligned}
 \min\quad &J=m(t_2^+)-m(t_3),\\
-\mathrm{s.t.}\quad &\dot{\bm x}=\bm f(\bm x,\phi,F_{\max2}),\\
-&r(t_3)=a,\quad v_r(t_3)=0,\quad v_t(t_3)=\sqrt{\mu/a},\\
-&0\le t_c\le400\ \mathrm{s},\quad 0<t_b\le t_{b2},\\
-&-90^\circ\le\phi(t)\le90^\circ,\quad
+\text{s.t.}\quad &\begin{cases}
+\dot{\bm x}(t)=\bm f\big(\bm x(t),\phi(t),F_{\max2}\big), \\
+x(t_2^+)=x(t_2^-),\quad m(t_2^+)=m(t_2^-),\\
+r(t_3)=a,\quad v_r(t_3)=0,\quad v_t(t_3)=\sqrt{\mu/a},\\
+0\le t_c\le400\ \mathrm{s},\quad 0<t_b\le t_{b2},\\
+-90^\circ\le\phi(t)\le90^\circ,\\
 m(t)\ge m_{s2}+m_{pl}.
+\end{cases}
 \end{aligned}
 \label{eq:ocpq3}
 \end{equation}
+其中第一行为全程动力学约束，第二行为二子级点火时刻的状态连续条件（滑行段与动力段衔接），第三行为目标圆轨道终端流形，第四至六行为控制量与状态的可行域约束。
 二级满推力且比冲恒定，故
 \begin{equation}
 J=\frac{F_{\max2}}{I_{sp2}g_0}t_b.
@@ -503,20 +505,23 @@ $(20,40)$ & 4.37670 & 394.35339 & 57446.934 & $-0.919$ & $(-0.0073,\phantom{-}0.
 两级网格耗药差为 0.012 kg，说明目标值已基本稳定；独立传播的终端高度误差小于 1 m，径向和切向速度误差均小于 0.01 m/s。最优解的关机时刻为 $t_3=547.791$ s，剩余推进剂 4553 kg。
 
 \subsubsection{最优俯仰角控制律}
-表 \ref{tab:q3phi} 给出 20/40 网格最优解在燃烧段等距采样点处的俯仰角（由 41 个配点节点的分段线性插值重采样得到）。
+图 \ref{fig:q3traj} 给出最优解对应的完整飞行曲线，图 \ref{fig:q3ctl} 给出俯仰角与节流比控制律。
 
-\begin{table}[!htbp]
-\caption{问题三最优俯仰角律（等距采样）}
-\label{tab:q3phi}
+\begin{figure}[!ht]
 \centering
-\begin{tabular}{c|c|c|c|c|c|c|c|c}
-\toprule[1.5pt]
-$t-t_2$/s & 0 & 56.3 & 112.7 & 169.0 & 225.3 & 281.7 & 338.0 & 394.4 \\
-\midrule[1pt]
-$\phi$/° & 7.310 & 5.587 & 4.162 & 3.036 & 2.231 & 1.783 & 1.758 & 2.265 \\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
+\includegraphics[width=0.95\textwidth]{fig_q3_trajectory}
+\caption{问题三最优解飞行曲线}
+\label{fig:q3traj}
+\end{figure}
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_q3_controls}
+\caption{问题三最优控制律}
+\label{fig:q3ctl}
+\end{figure}
+
+由图 \ref{fig:q3traj} 可见：二子级点火点约在 2.5 min 处（一级燃尽后几乎不滑行），点火后高度由约 230 km 连续上升至 400 km，惯性速度由约 2600 m/s 增长至圆轨道速度 7672.6 m/s，飞行路径角在点火点附近约 21° 并逐渐减小至零，总质量由 80 t 匀速下降至 22.6 t（耗药 57.4 t）。俯仰角控制律（图 \ref{fig:q3ctl}a）呈"先降后升"的平滑曲线，由点火时 7.31° 下降至约 1.75° 后回升至 2.27°；节流比保持为满推力（图 \ref{fig:q3ctl}b）。
 
 俯仰角由点火时约 $7.31^\circ$ 平滑下降，在约 $330$ s 处达到极小值 $1.75^\circ$，随后缓慢回升至关机点 $2.27^\circ$。这一“先降后升”的形态可由终端条件解释：推力方向在前期略高于水平，以同时爬升并补足切向速度；中期贴近水平以最小化径向速度残差；末端小幅上抬以将径向速度精确清零、同时补足微小的切向速度缺口。
 
@@ -528,31 +533,96 @@ $\phi$/° & 7.310 & 5.587 & 4.162 & 3.036 & 2.231 & 1.783 & 1.758 & 2.265 \\
 
 \section{问题四：推力节流下的燃料最省优化}
 
-\subsection{节流模型与推进剂约束}
-在问题三中增加节流比 $\sigma(t)$，使
+\subsection{优化模型建立}
+问题四在问题三的基础上允许二子级发动机推力在额定推力的 60\%$\sim$100\% 之间连续调节。按决策变量、目标函数、约束条件与标准模型的顺序建立模型。
+
+\subsubsection{决策变量}
+在问题三的决策变量基础上增加节流比控制变量。节流比 $\sigma(t)$ 是定义在燃烧段 $[t_2,t_3]$ 上的时间函数，与俯仰角 $\phi(t)$ 一样属于无限维控制量，配点转录后用 $N_b+1$ 个节点值 $\sigma_0,\dots,\sigma_{N_b}$ 参数化。因此决策对象为：滑行时间 $t_c$、燃烧时间 $t_b$、状态轨迹 $\bm x(t)$、俯仰角函数 $\phi(t)$ 与节流比函数 $\sigma(t)$。
+
+\subsubsection{目标函数}
+节流改变的是瞬时推力与质量流量。由式 \eqref{eq:massflow}，节流后的质量流量为
 \begin{equation}
-T(t)=\sigma(t)F_{\max2},\qquad
-\dot m=-\frac{\sigma(t)F_{\max2}}{I_{sp2}g_0},\qquad
-0.6\le\sigma(t)\le1.
+\dot m(t)=-\frac{\sigma(t)F_{\max2}}{I_{sp2}g_0},
+\label{eq:q4-massflow}
 \end{equation}
-目标函数为
+故二子级推进剂消耗为
 \begin{equation}
-J(\bm z)=\int_{t_2}^{t_3}\frac{\sigma(t)F_{\max2}}{I_{sp2}g_0}\,dt=m(t_2^{+})-m(t_3).
+J=\int_{t_2}^{t_3}\frac{\sigma(t)F_{\max2}}{I_{sp2}g_0}\,dt
+=m(t_2^{+})-m(t_3).
 \label{eq:obj4}
 \end{equation}
-问题四与问题三的关键区别在于：满推力燃尽时长 $t_{b2}=425.61$ s 不再是实际工作时间的上界。例如恒定 60\% 推力使用全部推进剂可工作 $t_{b2}/0.6\approx709.35$ s。因此正确的容量约束是
+与问题三不同，此时 $J$ 不再简单地正比于燃烧时间 $t_b$，而是正比于节流比对时间的积分：降低 $\sigma$ 会减小单位时间耗药率，但同时需要延长燃烧时间才能达到相同的速度增量，两种效应相互竞争，最优节流律正是这种权衡的结果。
+
+\subsubsection{约束条件}
+问题四的约束条件与问题三基本相同，仅推进剂容量约束需要修正，分述如下。
+
+\textbf{1. 动力学约束。} 节流后的状态方程与式 \eqref{eq:dynmass}--\eqref{eq:dyny} 形式一致，仅将推力 $T$ 替换为 $T=\sigma(t)F_{\max2}$：
+\begin{equation}
+\dot{\bm x}(t)=\bm f\big(\bm x(t),\phi(t),\sigma(t)\big).
+\label{eq:q4-dyn}
+\end{equation}
+
+\textbf{2. 阶段连接约束。} 与问题三相同，二子级点火时刻状态连续，一子级分离态为固定初值。
+
+\textbf{3. 终端入轨条件。} 与问题三完全相同：
+\begin{equation}
+r(t_3)=a,\qquad v_r(t_3)=0,\qquad v_t(t_3)=\sqrt{\mu/a}.
+\label{eq:q4-terminal}
+\end{equation}
+
+\textbf{4. 推进剂容量约束（本问的关键修正）。} 在问题三中燃烧时间以满推力燃尽时长 $t_{b2}=425.61$ s 为上界；节流后这一上界不再成立：例如恒定 60\% 推力使用全部推进剂可工作 $t_{b2}/0.6\approx709.35$ s。正确的容量约束是累计耗药量不超过推进剂总量，即
 \begin{equation}
 \int_{t_2}^{t_3}\sigma(t)\,dt\le t_{b2},
 \quad\Longleftrightarrow\quad
 m(t_3)\ge m_{s2}+m_{pl}=18000\ \mathrm{kg}.
 \label{eq:q4-fuel-capacity}
 \end{equation}
-采用式 \eqref{eq:q4-fuel-capacity} 后，低推力长燃烧轨迹不会被人为排除。其余动力学、阶段连接和顺行圆轨道终端条件与问题三完全相同。
+采用式 \eqref{eq:q4-fuel-capacity} 后，低推力长燃烧轨迹不会被人为排除。
 
-\subsection{与问题三共用的配点转录}
-在每个二级动力节点增加 $\sigma_k$，并将式 \eqref{eq:hs} 中的推力与质量流量替换为节流形式，即可复用同一套 Hermite--Simpson 转录。先以问题三的 $\sigma\equiv1$ 解暖启动，再以 $\sigma\equiv0.8$、燃烧时间相应延长的轨迹作为独立初值。两类初值均在同一物理可行域内求解，避免依靠几十组盲目初值暴力搜索。
+\textbf{5. 控制量边界约束。} 俯仰角可行域与问题三相同；节流比由发动机可稳定工作的推力范围给定，
+\begin{equation}
+0.6\le\sigma(t)\le1.0.
+\label{eq:q4-sigma-bound}
+\end{equation}
 
-节流后的动力方程及终端目标与问题三的区别仅在于：推力大小由 $\sigma(t)F_{\max2}$ 代替 $F_{\max2}$，质量流量相应缩放。求解流程与问题三完全一致，只是决策变量中增加 $N_b+1$ 个节流节点。
+\subsubsection{标准模型}
+综上，问题四的标准优化模型为
+\begin{equation}
+\begin{aligned}
+\min\quad &J=m(t_2^+)-m(t_3),\\
+\text{s.t.}\quad &\begin{cases}
+\dot{\bm x}(t)=\bm f\big(\bm x(t),\phi(t),\sigma(t)\big), \\
+x(t_2^+)=x(t_2^-),\quad m(t_2^+)=m(t_2^-),\\
+r(t_3)=a,\quad v_r(t_3)=0,\quad v_t(t_3)=\sqrt{\mu/a},\\
+\displaystyle\int_{t_2}^{t_3}\sigma(t)\,dt\le t_{b2},\quad m(t)\ge m_{s2}+m_{pl},\\
+0.6\le\sigma(t)\le1.0,\quad -90^\circ\le\phi(t)\le90^\circ,\\
+0\le t_c\le400\ \mathrm{s},\quad 0<t_b\le t_{b2}/0.6.
+\end{cases}
+\end{aligned}
+\label{eq:ocpq4}
+\end{equation}
+其中第一行为动力学约束（含节流），第二行为点火点状态连续条件，第三行为目标圆轨道终端流形，第四行为推进剂容量约束（以累计推力积分形式给出），第五、六行为控制量与时间的可行域。
+
+\subsection{Hermite--Simpson 直接配点求解}
+问题四采用与问题三相同的 Hermite--Simpson 转录，仅在两处修改：其一，动力段右端函数 \eqref{eq:hs} 中的推力与质量流量替换为节流形式，即
+\begin{equation}
+T_k=\sigma_kF_{\max2},\qquad
+\dot m_k=-\frac{\sigma_kF_{\max2}}{I_{sp2}g_0},\qquad k=0,\dots,N_b;
+\label{eq:q4-dyn-node}
+\end{equation}
+其二，决策变量增加 $N_b+1$ 个节流节点，并在约束中加入式 \eqref{eq:q4-fuel-capacity} 的离散形式
+\begin{equation}
+\frac{t_b}{N_b}\sum_{k=0}^{N_b-1}\frac{\sigma_k+\sigma_{k+1}}{2}\le t_{b2}.
+\label{eq:q4-capacity-discrete}
+\end{equation}
+由于问题四放宽了燃烧时间上界（由 $t_{b2}$ 放宽至 $t_{b2}/0.6$），初值选择对收敛性影响更大。求解流程如下：
+\begin{enumerate}
+  \item \textbf{初值一（满推力暖启动）}：直接取问题三的最优解，$\sigma_k\equiv1.0$，燃烧时间 $t_b=394.35$ s，作为第一个初值；
+  \item \textbf{初值二（低节流独立启动）}：令 $\sigma_k\equiv0.8$，燃烧时间相应延长至约 $493$ s，状态轨迹以问题三最优解插值并人为适应更长燃烧段，作为第二个初值；
+  \item \textbf{求解与网格加密}：两类初值分别在 $(10,20)$ 网格求解，再将各自解插值到 $(20,40)$ 网格重解，比较目标值；
+  \item \textbf{独立复验}：将最优节流与俯仰角律（节点分段线性插值）交与独立的 DOP853 积分器重新传播，检查终端误差。
+\end{enumerate}
+两类初值在同一物理可行域内求解，避免依靠几十组盲目初值暴力搜索；若两类初值收敛到不同解，则可判断存在多个局部最优并考察其目标值差异。
 
 \subsection{结果与分析}
 表 \ref{tab:q4res} 给出两级网格结果。
@@ -572,23 +642,23 @@ $(20,40)$ & 4.37641 & 394.35381 & 0.999999--1 & 57446.935 & $-0.005$ \\
 \end{table}
 
 \subsubsection{最优节流与俯仰角控制策略}
-表 \ref{tab:q4sigma} 给出 20/40 网格最优解的节流比与俯仰角在燃烧段等距采样点处的数值（由 41 个配点节点的分段线性插值重采样得到）。
+图 \ref{fig:q4traj} 与 \ref{fig:q4ctl} 给出最优解对应的完整飞行曲线与控制律。
 
-\begin{table}[!htbp]
-\caption{问题四最优控制律（等距采样）}
-\label{tab:q4sigma}
+\begin{figure}[!ht]
 \centering
-\begin{tabular}{c|c|c|c|c|c|c|c|c}
-\toprule[1.5pt]
-$t-t_2$/s & 0 & 56.3 & 112.7 & 169.0 & 225.3 & 281.7 & 338.0 & 394.4 \\
-\midrule[1pt]
-$\sigma$ & 0.999976 & 0.999999 & 1.000000 & 1.000000 & 1.000000 & 1.000000 & 1.000000 & 0.999989 \\
-$\phi$/° & 7.310 & 5.587 & 4.162 & 3.036 & 2.231 & 1.781 & 1.752 & 2.265 \\
-\bottomrule[1.5pt]
-\end{tabular}
-\end{table}
+\includegraphics[width=0.95\textwidth]{fig_q4_trajectory}
+\caption{问题四最优解飞行曲线}
+\label{fig:q4traj}
+\end{figure}
 
-最优控制策略可以完整表述为：\textbf{滑行时间 4.3764 s；二子级以额定推力点火，节流比在全程保持在 0.99998$\sim$1.00000 之间（即节流能力在工程可忽略的意义下未被使用）；俯仰角由点火时的 7.31° 平滑下降，约 330 s 处达到极小 1.75°，随后回升至关机点 2.27°}。与问题三的最优解相比，问题四仅把燃烧时间延长 0.0004 s、耗药增加 0.001 kg——节流自由度对最优轨迹的贡献趋近于零。
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_q4_controls}
+\caption{问题四最优控制律}
+\label{fig:q4ctl}
+\end{figure}
+
+最优控制策略可以完整表述为：\textbf{滑行时间 4.3764 s；二子级以额定推力点火，节流比在全程保持在 0.99998$\sim$1.00000 之间（图 \ref{fig:q4ctl}b 中 $\sigma$ 曲线紧贴上限 1.0），即节流能力在工程可忽略的意义下未被使用；俯仰角由点火时的 7.31° 平滑下降，约 330 s 处达到极小 1.75°，随后回升至关机点 2.27°}。与问题三的最优解相比，问题四仅把燃烧时间延长 0.0004 s、耗药增加 0.001 kg——节流自由度对最优轨迹的贡献趋近于零。
 
 \subsubsection{两类初值的收敛性}
 以 $\sigma\equiv0.8$、燃烧时间相应延长至约 493 s 的轨迹作为独立初值时，求解器同样收敛到上述近似满推力解（表 \ref{tab:q4res} 的第二行即从该初值出发的结果）。这说明结论对初值不敏感，不是靠初值引导出来的伪解。
