@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="900" height="560" fill="white"/>
+  <text x="450" y="36" text-anchor="middle" font-family="SimSun" font-size="20" font-weight="bold" fill="#111">入轨条件几何关系（赤道平面）</text>
+
+  <!-- 地球 + 目标轨道 -->
+  <circle cx="310" cy="330" r="120" fill="#e8edf3" stroke="#7a8ea8" stroke-width="1.5"/>
+  <circle cx="310" cy="330" r="152" fill="none" stroke="#b23c3c" stroke-width="1.6" stroke-dasharray="9 6"/>
+  <text x="445" y="175" font-family="SimHei" font-size="13" fill="#b23c3c">目标圆轨道</text>
+  <text x="445" y="192" font-family="SimSun" font-size="12" fill="#b23c3c">r = R_E + H</text>
+
+  <!-- 火箭关机点 -->
+  <circle cx="430" cy="220" r="7" fill="#1F4E79"/>
+  <text x="448" y="208" font-family="SimHei" font-size="13" fill="#1F4E79">关机点 t₃</text>
+  <!-- r 向量 -->
+  <line x1="310" y1="330" x2="430" y2="220" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="380" y="285" font-family="SimSun" font-size="14" fill="#333">r</text>
+  <!-- 速度向量 v -->
+  <line x1="430" y1="220" x2="540" y2="175" stroke="#2E6B4E" stroke-width="2.2" marker-end="url(#arrow)"/>
+  <text x="548" y="180" font-family="SimSun" font-size="15" fill="#2E6B4E">v</text>
+  <!-- 径向速度 0 标志 -->
+  <text x="455" y="240" font-family="SimHei" font-size="12" fill="#2E6B4E">v·r̂ = 0</text>
+  <text x="455" y="258" font-family="SimHei" font-size="12" fill="#2E6B4E">|v| = √(μ/r)</text>
+
+  <!-- 放大框：入轨条件 -->
+  <g transform="translate(560 90)">
+    <rect x="0" y="0" width="310" height="230" fill="#fafafa" stroke="#ccc" stroke-width="1"/>
+    <text x="155" y="26" text-anchor="middle" font-family="SimHei" font-size="14" fill="#111">入轨条件（3 个等式）</text>
+    <line x1="20" y1="46" x2="290" y2="46" stroke="#999" stroke-width="0.8"/>
+    <text x="22" y="80" font-family="SimSun" font-size="14" fill="#333">|r(t₃)| = R_E + H = 6771 km</text>
+    <text x="22" y="118" font-family="SimSun" font-size="14" fill="#333">|v(t₃)| = √(μ/|r|) = 7672.6 m/s</text>
+    <text x="22" y="156" font-family="SimSun" font-size="14" fill="#333">r(t₃)·v(t₃) = 0</text>
+    <text x="22" y="190" font-family="SimHei" font-size="12" fill="#666">（第三条等价于 γ = 0）</text>
+    <text x="22" y="212" font-family="SimHei" font-size="12" fill="#666">（速度在惯性系中度量）</text>
+  </g>
+
+  <!-- 底部说明 -->
+  <text x="310" y="510" text-anchor="middle" font-family="SimHei" font-size="13" fill="#555">地球自转：初速 v₀ = ω_E·R_E ≈ 464.6 m/s（东向）</text>
+  <text x="310" y="532" text-anchor="middle" font-family="SimHei" font-size="13" fill="#555">阻力按相对速度 v_rel = v − ω_E × r 计算</text>
+</svg>

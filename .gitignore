@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 论文编译产物（可重新生成）
+论文/*.aux
+论文/*.log
+论文/*.out
+论文/*.toc
+
+# 第三方开源求解器代码库（参考资料，不纳入版本控制；保留对应论文 PDF）
+文献/代码/
+
+# 压缩包与临时文件
+文献/论文.zip
+*.zip
+
+# 临时/诊断脚本
+figures_src/_diag_*.py
+figures_src/_sensitivity.py
+
+# 系统文件
+.DS_Store
+Thumbs.db

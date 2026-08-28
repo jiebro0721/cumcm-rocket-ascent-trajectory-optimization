@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#b23c3c"/>
+    </marker>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="900" height="620" fill="white"/>
+
+  <!-- 标题 -->
+  <text x="450" y="38" text-anchor="middle" font-family="SimSun, serif" font-size="20" font-weight="bold" fill="#111">飞行剖面与三阶段划分</text>
+
+  <!-- 第一、二阶段：高度-时间曲线示意 -->
+  <!-- 坐标轴 -->
+  <line x1="90" y1="520" x2="840" y2="520" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="90" y1="520" x2="90" y2="100" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="850" y="540" font-family="SimSun" font-size="16" fill="#111">t / s</text>
+  <text x="45" y="120" font-family="SimSun" font-size="16" fill="#111" transform="rotate(-90 45 120)">h / km</text>
+
+  <!-- 阶段分隔竖线 -->
+  <line x1="300" y1="100" x2="300" y2="520" stroke="#999" stroke-width="1" stroke-dasharray="6 4"/>
+  <line x1="490" y1="100" x2="490" y2="520" stroke="#999" stroke-width="1" stroke-dasharray="6 4"/>
+  <line x1="770" y1="100" x2="770" y2="520" stroke="#999" stroke-width="1" stroke-dasharray="6 4"/>
+
+  <!-- 高度曲线：分四段：垂直(+10s快升)、程序转弯(爬升至一级关机)、滑行(抛物线)、二级点火(继续上升) -->
+  <path d="M 90 520 L 135 500 Q 160 470 300 350 Q 400 270 490 245 Q 550 230 610 205 Q 690 175 770 150" fill="none" stroke="#1F4E79" stroke-width="2.6"/>
+  <!-- 一级关机到二级点火之间重力滑行分界 -->
+  <circle cx="300" cy="350" r="5" fill="#1F4E79"/>
+  <circle cx="490" cy="245" r="5" fill="#1F4E79"/>
+  <circle cx="770" cy="150" r="5" fill="#b23c3c"/>
+
+  <!-- 阶段标注 -->
+  <text x="195" y="420" text-anchor="middle" font-family="SimHei" font-size="15" fill="#111">垂直起飞段</text>
+  <text x="195" y="440" text-anchor="middle" font-family="SimHei" font-size="13" fill="#666">（0 – 10 s）</text>
+  <text x="395" y="410" text-anchor="middle" font-family="SimHei" font-size="15" fill="#111">程序转弯段</text>
+  <text x="395" y="430" text-anchor="middle" font-family="SimHei" font-size="13" fill="#666">（10 s – t₁，一子级工作）</text>
+  <text x="630" y="300" text-anchor="middle" font-family="SimHei" font-size="15" fill="#111">无动力滑行段</text>
+  <text x="630" y="320" text-anchor="middle" font-family="SimHei" font-size="13" fill="#666">（t₁ – t₂，二子级未点火）</text>
+  <text x="805" y="120" text-anchor="middle" font-family="SimHei" font-size="15" fill="#b23c3c">入轨修正段</text>
+  <text x="805" y="140" text-anchor="middle" font-family="SimHei" font-size="13" fill="#666">（二子级点火至入轨）</text>
+
+  <!-- 事件标注 -->
+  <text x="300" y="370" text-anchor="middle" font-family="SimHei" font-size="12" fill="#333">t₁ 一级关机</text>
+  <text x="490" y="228" text-anchor="middle" font-family="SimHei" font-size="12" fill="#333">t₂ 二级点火</text>
+  <text x="770" y="132" text-anchor="middle" font-family="SimHei" font-size="12" fill="#b23c3c">t₃ 关机入轨</text>
+
+  <!-- 目标轨道高度线 -->
+  <line x1="90" y1="200" x2="840" y2="200" stroke="#b23c3c" stroke-width="1.2" stroke-dasharray="8 5"/>
+  <text x="830" y="192" text-anchor="end" font-family="SimHei" font-size="13" fill="#b23c3c">目标轨道 400 km</text>
+
+  <!-- 右侧小图：二级段放大 -->
+  <g transform="translate(600 380)">
+    <rect x="0" y="0" width="280" height="210" fill="#fafafa" stroke="#ccc" stroke-width="1"/>
+    <text x="140" y="22" text-anchor="middle" font-family="SimHei" font-size="12" fill="#111">二子级段（放大）</text>
+    <line x1="30" y1="180" x2="260" y2="180" stroke="#333" stroke-width="1.2"/>
+    <line x1="30" y1="180" x2="30" y2="40" stroke="#333" stroke-width="1.2"/>
+    <text x="265" y="192" font-family="SimSun" font-size="11" fill="#111">t</text>
+    <text x="16" y="45" font-family="SimSun" font-size="11" fill="#111">h</text>
+    <path d="M 30 180 Q 60 150 100 120 L 160 70 L 230 50" fill="none" stroke="#1F4E79" stroke-width="2"/>
+    <circle cx="100" cy="120" r="3.5" fill="#1F4E79"/>
+    <text x="100" y="135" text-anchor="middle" font-family="SimHei" font-size="10" fill="#111">t₂ 点火</text>
+    <circle cx="230" cy="50" r="4" fill="#b23c3c"/>
+    <text x="225" y="40" text-anchor="end" font-family="SimHei" font-size="10" fill="#b23c3c">t₃ 关机</text>
+  </g>
+</svg>

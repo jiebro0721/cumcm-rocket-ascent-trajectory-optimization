@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600" viewBox="0 0 900 600">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="900" height="600" fill="white"/>
+  <text x="450" y="36" text-anchor="middle" font-family="SimSun" font-size="20" font-weight="bold" fill="#111">三种控制策略下二子级俯仰角律（时间归一化）</text>
+
+  <!-- 轴 -->
+  <line x1="80" y1="520" x2="840" y2="520" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="80" y1="520" x2="80" y2="90" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="848" y="545" font-family="SimSun" font-size="15" fill="#111">τ = (t − t₂) / (t₃ − t₂)</text>
+  <text x="40" y="95" font-family="SimSun" font-size="15" fill="#111" transform="rotate(-90 40 95)">φ / deg</text>
+
+  <!-- 网格 -->
+  <line x1="80" y1="420" x2="840" y2="420" stroke="#ddd" stroke-width="0.7"/>
+  <line x1="80" y1="320" x2="840" y2="320" stroke="#ddd" stroke-width="0.7"/>
+  <line x1="80" y1="220" x2="840" y2="220" stroke="#ddd" stroke-width="0.7"/>
+  <line x1="80" y1="120" x2="840" y2="120" stroke="#ddd" stroke-width="0.7"/>
+  <text x="60" y="425" text-anchor="end" font-family="SimSun" font-size="13" fill="#555">30</text>
+  <text x="60" y="325" text-anchor="end" font-family="SimSun" font-size="13" fill="#555">20</text>
+  <text x="60" y="225" text-anchor="end" font-family="SimSun" font-size="13" fill="#555">10</text>
+  <text x="60" y="125" text-anchor="end" font-family="SimSun" font-size="13" fill="#555">0</text>
+
+  <!-- 纵向网格 -->
+  <line x1="270" y1="90" x2="270" y2="520" stroke="#ddd" stroke-width="0.7"/>
+  <line x1="460" y1="90" x2="460" y2="520" stroke="#ddd" stroke-width="0.7"/>
+  <line x1="650" y1="90" x2="650" y2="520" stroke="#ddd" stroke-width="0.7"/>
+  <text x="270" y="545" text-anchor="middle" font-family="SimSun" font-size="13" fill="#555">0.25</text>
+  <text x="460" y="545" text-anchor="middle" font-family="SimSun" font-size="13" fill="#555">0.5</text>
+  <text x="650" y="545" text-anchor="middle" font-family="SimSun" font-size="13" fill="#555">0.75</text>
+
+  <!-- Q1: φ = γ 恒攻角（参照线，下降至 1° 附近） -->
+  <path d="M 80 105 Q 200 95 380 160 Q 560 225 840 518" fill="none" stroke="#999" stroke-width="1.8" stroke-dasharray="7 5"/>
+  <text x="560" y="235" font-family="SimHei" font-size="14" fill="#999">Q1：恒攻角（φ = γ）</text>
+
+  <!-- Q2: 恒定速率 k = -0.0552 deg/s 近似直线 -->
+  <path d="M 80 105 L 840 232" fill="none" stroke="#1F4E79" stroke-width="2.4"/>
+  <text x="300" y="118" font-family="SimHei" font-size="14" fill="#1F4E79">Q2：恒定速率 k = −0.0552°/s</text>
+
+  <!-- Q3: 分段线性最优 -->
+  <polyline points="80,105 270,150 460,152 650,180 840,195" fill="none" stroke="#b23c3c" stroke-width="2.6"/>
+  <circle cx="270" cy="150" r="4" fill="#b23c3c"/>
+  <circle cx="460" cy="152" r="4" fill="#b23c3c"/>
+  <circle cx="650" cy="180" r="4" fill="#b23c3c"/>
+  <text x="480" y="140" font-family="SimHei" font-size="14" fill="#b23c3c">Q3：分段线性最优控制</text>
+
+  <!-- 图例 -->
+  <g transform="translate(560 420)">
+    <rect x="0" y="0" width="260" height="85" fill="#fafafa" stroke="#ccc" stroke-width="1"/>
+    <line x1="12" y1="22" x2="60" y2="22" stroke="#999" stroke-width="2"/>
+    <text x="68" y="26" font-family="SimHei" font-size="12" fill="#333">Q1 恒攻角</text>
+    <line x1="12" y1="45" x2="60" y2="45" stroke="#1F4E79" stroke-width="2.4"/>
+    <text x="68" y="49" font-family="SimHei" font-size="12" fill="#333">Q2 恒定速率</text>
+    <line x1="12" y1="68" x2="60" y2="68" stroke="#b23c3c" stroke-width="2.6"/>
+    <text x="68" y="72" font-family="SimHei" font-size="12" fill="#333">Q3 分段线性最优</text>
+  </g>
+
+  <!-- 说明 -->
+  <text x="450" y="585" text-anchor="middle" font-family="SimHei" font-size="12" fill="#555">初始俯仰角 φ₀ 均等于点火时刻速度方向（与当地水平面夹角）</text>
+</svg>

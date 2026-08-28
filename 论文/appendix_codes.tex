@@ -1,0 +1,1520 @@
+% 附录：完整源代码（自动生成，与 src/ 下运行程序完全一致）
+% 注意：lstlisting 内使用 ttfamily 字体需包含中文，由 xeCJK 处理
+\clearpage
+\section{全程仿真公共模块 common.py}
+\begin{lstlisting}[language=Python]
+"""两级运载火箭发射轨迹建模：公共工具模块（问题 1~4 共用）。
+
+提供：物理常数、火箭参数、指数大气模型、平面点质量动力学（惯性 ECI 分量，
+含地球自转与大气阻力）、分段数值积分器、入轨条件残差、绘图与结果输出。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy.integrate import solve_ivp
+
+# ---------------------------------------------------------------------------
+# 物理常数（SI）
+# ---------------------------------------------------------------------------
+MU = 3.986004418e14        # 地球引力常数 [m^3/s^2]
+R_E = 6371.0e3             # 地球半径（平均）[m]
+OMEGA_E = 7.2921159e-5     # 地球自转角速度 [rad/s]
+G0 = 9.80665               # 海平面重力加速度 [m/s^2]
+RHO0 = 1.225               # 海平面大气密度 [kg/m^3]
+H_SCALE = 7200.0           # 指数大气标高 [m]
+
+ROOT = Path(__file__).resolve().parent.parent
+FIG_DIR = ROOT / "figures"
+RES_DIR = ROOT / "results"
+FIG_DIR.mkdir(exist_ok=True)
+RES_DIR.mkdir(exist_ok=True)
+
+DEG = np.pi / 180.0
+
+
+# ---------------------------------------------------------------------------
+# 火箭参数（题目给定）
+# ---------------------------------------------------------------------------
+@dataclass
+class RocketParams:
+    """两级液体运载火箭参数（题面给定值）。"""
+
+    # 一子级
+    M0: float = 500_000.0        # 起飞质量（含有效载荷与二子级）[kg]
+    ms1: float = 40_000.0        # 一子级结构质量 [kg]
+    mp1: float = 380_000.0       # 一子级推进剂质量 [kg]
+    Isp1: float = 300.0          # 真空比冲 [s]
+    Fmax1: float = 7.5e6         # 额定最大推力 [N]
+    S: float = 12.5              # 气动阻力参考面积 [m^2]
+    CD: float = 0.3              # 阻力系数（忽略马赫数变化）
+    # 二子级
+    ms2: float = 8_000.0         # 二子级结构质量 [kg]
+    mp2: float = 62_000.0        # 二子级推进剂质量 [kg]
+    m_payload: float = 10_000.0  # 有效载荷质量 [kg]
+    Isp2: float = 420.0          # 真空比冲 [s]
+    Fmax2: float = 6.0e5         # 额定最大推力 [N]
+    # 任务
+    H_target: float = 400.0e3    # 目标圆轨道高度 [m]
+    t_vertical: float = 10.0     # 垂直起飞时长 [s]
+    pitch_rate_q1: float = 0.4 * DEG  # 问题 1 程序转弯俯仰角角速率 [rad/s]
+    t_coast_q1: float = 60.0     # 问题 1 滑行时间 [s]
+
+    @property
+    def mdot1(self) -> float:
+        """一子级质量流量 = F/(Isp·g0)（真空、全推力）[kg/s]。"""
+        return self.Fmax1 / (self.Isp1 * G0)
+
+    @property
+    def mdot2(self) -> float:
+        """二子级额定质量流量 [kg/s]。"""
+        return self.Fmax2 / (self.Isp2 * G0)
+
+    @property
+    def t_burn1(self) -> float:
+        """一子级推进剂耗尽时间 [s]（一级全推力恒额定，故为定值）。"""
+        return self.mp1 / self.mdot1
+
+    @property
+    def t_burn2(self) -> float:
+        """二子级推进剂耗尽时间 [s]。"""
+        return self.mp2 / self.mdot2
+
+    @property
+    def m_after_sep(self) -> float:
+        """一子级分离瞬间（关机后）剩余质量 [kg]：M0 - mp1 - ms1。"""
+        return self.M0 - self.mp1 - self.ms1
+
+    @property
+    def a_target(self) -> float:
+        """目标圆轨道地心距 [m]。"""
+        return R_E + self.H_target
+
+    @property
+    def v_circular(self) -> float:
+        """目标圆轨道惯性速度 sqrt(mu/a) [m/s]。"""
+        return np.sqrt(MU / self.a_target)
+
+
+# ---------------------------------------------------------------------------
+# 大气模型
+# ---------------------------------------------------------------------------
+def rho_air(h: np.ndarray | float) -> np.ndarray | float:
+    """指数大气密度模型 rho = rho0 * exp(-h / h0)。"""
+    return RHO0 * np.exp(-h / H_SCALE)
+
+
+# ---------------------------------------------------------------------------
+# 平面点质量动力学（惯性 ECI 笛卡尔分量，赤道平面内）
+# ---------------------------------------------------------------------------
+def rel_velocity(rx: np.ndarray, ry: np.ndarray, vx: np.ndarray, vy: np.ndarray):
+    """相对大气速度 v_rel = v_in - omega_E x r（赤道平面：omega_E x r = om*[-y, x]）。"""
+    return vx + OMEGA_E * ry, vy - OMEGA_E * rx
+
+
+def flight_path_angle(vrx: np.ndarray, vry: np.ndarray, rx: np.ndarray, ry: np.ndarray):
+    """相对速度飞行路径角 gamma = atan2(v·r_hat, v·t_hat) [rad]。
+
+    r_hat = r/|r|，t_hat = z_hat x r_hat（东向）。
+    垂直上升段 v~=0 时输出无定义，入轨段（高空）有效。
+    """
+    r = np.hypot(rx, ry)
+    r_dot = (vrx * rx + vry * ry) / r          # 径向分量
+    t_dot = (vrx * (-ry) + vry * rx) / r       # 切向（东向）分量
+    return np.arctan2(r_dot, t_dot)
+
+
+def gamma_inertial(vx: np.ndarray, vy: np.ndarray, rx: np.ndarray, ry: np.ndarray):
+    """惯性速度飞行路径角（与入轨条件 r·v=0 直接对应）[rad]。"""
+    r = np.hypot(rx, ry)
+    r_dot = (vx * rx + vy * ry) / r
+    t_dot = (vx * (-ry) + vy * rx) / r
+    return np.arctan2(r_dot, t_dot)
+
+
+def drag_accel(
+    vrx: np.ndarray, vry: np.ndarray,
+    rx: np.ndarray, ry: np.ndarray,
+    S: float, CD: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """气动阻力加速度 [m/s^2]：a_D = -0.5*rho*S*CD*|v_rel|*v_rel / m。
+
+    返回 (ax, ay)（惯性分量）。此处不含质量，由调用者再除以 m。
+    """
+    r = np.hypot(rx, ry)
+    h = r - R_E
+    rho = rho_air(h)
+    vrel = np.hypot(vrx, vry)
+    q = 0.5 * rho * S * CD * vrel
+    return -q * vrx, -q * vry
+
+
+def thrust_unit(phi: np.ndarray, rx: np.ndarray, ry: np.ndarray):
+    """由俯仰角 phi（推力与当地水平面的夹角）构造推力单位向量 û（惯性分量）。
+
+    û = cos(phi) * t_hat + sin(phi) * r_hat。
+    """
+    r = np.hypot(rx, ry)
+    rx_h, ry_h = rx / r, ry / r              # 径向单位向量
+    tx_h, ty_h = -ry / r, rx / r             # 东向单位向量
+    return tx_h * np.cos(phi) + rx_h * np.sin(phi), ty_h * np.cos(phi) + ry_h * np.sin(phi)
+
+
+# ---------------------------------------------------------------------------
+# 分段数值积分器
+# ---------------------------------------------------------------------------
+@dataclass
+class Segment:
+    """一段飞行轨迹的积分结果。"""
+
+    t: np.ndarray
+    x: np.ndarray   # [x, y, vx, vy, m]
+    vrx: np.ndarray
+    vry: np.ndarray
+    gamma: np.ndarray     # 惯性速度飞行路径角
+    gamma_rel: np.ndarray  # 相对速度飞行路径角
+    phi: np.ndarray  # 俯仰角
+    T: np.ndarray    # 推力
+    sigma: np.ndarray
+    name: str = ""
+
+    @property
+    def h(self) -> np.ndarray:
+        return np.hypot(self.x[:, 0], self.x[:, 1]) - R_E
+
+    @property
+    def v_in(self) -> np.ndarray:
+        return np.hypot(self.x[:, 2], self.x[:, 3])
+
+    @property
+    def m(self) -> np.ndarray:
+        return self.x[:, 4]
+
+    @property
+    def time(self) -> np.ndarray:
+        return self.t
+
+
+@dataclass
+class SimResult:
+    """完整仿真结果（各阶段拼接）。"""
+
+    t: np.ndarray
+    x: np.ndarray             # 分段拼接后的状态
+    vrx: np.ndarray
+    vry: np.ndarray
+    gamma: np.ndarray         # 惯性速度飞行路径角
+    gamma_rel: np.ndarray     # 相对速度飞行路径角
+    phi: np.ndarray
+    T: np.ndarray
+    sigma: np.ndarray
+    phase: list[str] = field(default_factory=list)  # 每点的阶段名
+    t1: float | None = None     # 一子级燃尽时刻
+    t2: float | None = None     # 二子级点火时刻
+    t_shut: float | None = None  # 二子级关机（实际）时刻
+    stages: list[Segment] = field(default_factory=list)
+
+    @property
+    def h(self) -> np.ndarray:
+        return np.hypot(self.x[:, 0], self.x[:, 1]) - R_E
+
+    @property
+    def v_in(self) -> np.ndarray:
+        return np.hypot(self.x[:, 2], self.x[:, 3])
+
+    @property
+    def m(self) -> np.ndarray:
+        return self.x[:, 4]
+
+    @property
+    def gamma_deg(self) -> np.ndarray:
+        return self.gamma / DEG
+
+    def final_state(self) -> dict:
+        return {
+            "h_km": float(np.hypot(self.x[-1, 0], self.x[-1, 1]) / 1e3 - R_E / 1e3),
+            "v_in_mps": float(np.hypot(self.x[-1, 2], self.x[-1, 3])),
+            "gamma_deg": float(self.gamma[-1] / DEG),
+            "gamma_rel_deg": float(self.gamma_rel[-1] / DEG),
+            "m_kg": float(self.x[-1, 4]),
+        }
+
+
+class Simulator:
+    """飞行段积分器：垂直段 -> 程序转弯段 -> 分离 -> 滑行段 -> 二级动力段。"""
+
+    def __init__(self, rk: RocketParams | None = None):
+        self.rk = rk or RocketParams()
+
+    # -- 各段右端函数 ------------------------------------------------------
+    def _rhs(
+        self,
+        t: float, x: np.ndarray,
+        T_const: float, sigma: float,
+        phi: float, along_vel: bool,
+        drag_S: float, drag_CD: float,
+        Isp: float,
+    ) -> np.ndarray:
+        rx, ry, vx, vy, m = x
+        T = T_const * sigma
+        if along_vel:
+            vrx, vry = rel_velocity(rx, ry, vx, vy)
+            vrel = np.hypot(vrx, vry)
+            tx_h, ty_h = (vrx / vrel, vry / vrel) if vrel > 1e-9 else (0.0, 1.0)
+        else:
+            tx_h, ty_h = thrust_unit(phi, rx, ry)
+        r = np.hypot(rx, ry)
+        ax = -MU / r**3 * rx + T / m * tx_h
+        ay = -MU / r**3 * ry + T / m * ty_h
+        if drag_S > 0.0:
+            vrx, vry = rel_velocity(rx, ry, vx, vy)
+            dax, day = drag_accel(vrx, vry, rx, ry, drag_S, drag_CD)
+            ax += dax / m
+            ay += day / m
+        return np.array([vx, vy, ax, ay, -T / (Isp * G0)])
+
+    # -- 单段积分 ----------------------------------------------------------
+    def _integrate(
+        self,
+        t0: float, tf: float, y0: np.ndarray,
+        T_const: float, sigma: float,
+        phi_fn, along_vel: bool,
+        drag_S: float, drag_CD: float,
+        rtol: float, atol: np.ndarray,
+        name: str,
+    ) -> Segment:
+        def rhs(t, x):
+            phi = phi_fn(t) if phi_fn is not None else 0.0
+            return self._rhs(
+                t, x, T_const, sigma, phi, along_vel, drag_S, drag_CD, self.rk.Isp1
+            )
+
+        sol = solve_ivp(
+            rhs, (t0, tf), y0, method="DOP853",
+            rtol=rtol, atol=atol, dense_output=True,
+        )
+        t = np.linspace(t0, tf, max(2, int((tf - t0) * 20) + 1))
+        x = sol.sol(t).T
+        vrx, vry = rel_velocity(x[:, 0], x[:, 1], x[:, 2], x[:, 3])
+        gamma = gamma_inertial(x[:, 2], x[:, 3], x[:, 0], x[:, 1])
+        gamma_rel = flight_path_angle(vrx, vry, x[:, 0], x[:, 1])
+        if along_vel:
+            phi = np.where(
+                np.hypot(vrx, vry) > 1e-9,
+                np.arctan2(vrx * x[:, 0] + vry * x[:, 1],
+                           vrx * (-x[:, 1]) + vry * x[:, 0]),
+                np.nan,
+            )
+        else:
+            phi = np.array([phi_fn(ti) if phi_fn is not None else np.nan for ti in t])
+        T = np.full_like(t, T_const * sigma)
+        return Segment(t, x, vrx, vry, gamma, gamma_rel, phi, T, np.full_like(t, sigma), name)
+
+    # -- 全流程 ------------------------------------------------------------
+    def simulate(
+        self,
+        t_coast: float = 60.0,
+        controller=None,
+        t_shut: float | None = None,
+        sigma: float | callable = 1.0,
+        rtol: float = 1e-9,
+        drag_after_sep: bool = False,
+    ) -> SimResult:
+        """按六段剖面仿真。
+
+        controller(t) -> phi [rad]：二级动力段俯仰角程序；None 表示攻角为零
+        （推力方向与相对速度方向一致）。
+        sigma: 二级节流比（常数或函数 t->sigma，默认 1.0）。
+        t_shut: 二级关机时刻（绝对时间）。None 或超出燃尽时间则推进剂耗尽关机。
+        返回 SimResult（全阶段拼接）。
+        """
+        rk = self.rk
+        st = []
+        atol = np.array([1e-2, 1e-2, 1e-4, 1e-4, 1e-2])
+
+        # --- 1) 垂直起飞段 [0, t_vert]：推力沿当地径向，全推力，有阻力 ---
+        y0 = np.array([R_E, 0.0, 0.0, OMEGA_E * R_E, rk.M0])
+        phi = 0.5 * np.pi
+        seg = self._integrate(
+            0.0, rk.t_vertical, y0,
+            rk.Fmax1, 1.0, lambda t: phi, False,
+            rk.S, rk.CD, rtol, atol, "vertical",
+        )
+        st.append(seg)
+
+        # --- 2) 程序转弯段 [t_vert, t_burn1]：phi 以 0.4deg/s 线性减小 ---
+        phi_fn = lambda t: 0.5 * np.pi - rk.pitch_rate_q1 * (t - rk.t_vertical)
+        seg = self._integrate(
+            rk.t_vertical, rk.t_burn1, seg.x[-1],
+            rk.Fmax1, 1.0, phi_fn, False,
+            rk.S, rk.CD, rtol, atol, "pitch-over",
+        )
+        st.append(seg)
+
+        # --- 3) 一子级分离（质量跳变）---
+        x1 = seg.x[-1].copy()
+        x1[4] -= rk.ms1
+
+        # --- 4) 无动力滑行段 [t1, t1+t_coast]：无阻力 ---
+        t1 = rk.t_burn1
+        t2 = t1 + t_coast
+        seg = self._integrate(
+            t1, t2, x1,
+            0.0, 1.0, lambda t: 0.0, False,
+            0.0, 0.0, rtol, atol, "coast",
+        )
+        st.append(seg)
+
+        # --- 5) 二级动力段 [t2, t_shut] ---
+        mdot2 = rk.mdot2
+        sigma_fn = sigma if callable(sigma) else (lambda t: float(sigma))
+        if t_shut is None:
+            t_shut = t2 + rk.t_burn2   # 燃尽
+        t_shut = min(t_shut, t2 + rk.t_burn2)
+
+        def mass_flow(t):
+            return -sigma_fn(t) * rk.Fmax2 / (rk.Isp2 * G0)
+
+        def rhs2(t, x):
+            sig = sigma_fn(t)
+            T = sig * rk.Fmax2
+            if controller is None:
+                vrx, vry = rel_velocity(x[0], x[1], x[2], x[3])
+                vrel = np.hypot(vrx, vry)
+                tx_h, ty_h = (vrx / vrel, vry / vrel) if vrel > 1e-9 else (0.0, 1.0)
+            else:
+                p = controller(t)
+                tx_h, ty_h = thrust_unit(p, x[0], x[1])
+            r = np.hypot(x[0], x[1])
+            ax = -MU / r**3 * x[0] + T / x[4] * tx_h
+            ay = -MU / r**3 * x[1] + T / x[4] * ty_h
+            return np.array([x[2], x[3], ax, ay, mass_flow(t)])
+
+        sol = solve_ivp(
+            rhs2, (t2, t_shut), seg.x[-1], method="DOP853",
+            rtol=rtol, atol=atol,
+            events=[lambda t, x: x[4] - (rk.ms2 + rk.m_payload)],
+            dense_output=True,
+        )
+        if sol.t_events[0].size > 0:
+            t_shut = float(sol.t_events[0][0])
+        tt = np.linspace(t2, t_shut, max(2, int((t_shut - t2) * 20) + 1))
+        xs = sol.sol(tt).T
+        sig_arr = np.array([sigma_fn(ti) for ti in tt])
+        vrx, vry = rel_velocity(xs[:, 0], xs[:, 1], xs[:, 2], xs[:, 3])
+        gamma = gamma_inertial(xs[:, 2], xs[:, 3], xs[:, 0], xs[:, 1])
+        gamma_rel = flight_path_angle(vrx, vry, xs[:, 0], xs[:, 1])
+        if controller is None:
+            phi_arr = np.where(
+                np.hypot(vrx, vry) > 1e-9,
+                np.arctan2(vrx * xs[:, 0] + vry * xs[:, 1],
+                           vrx * (-xs[:, 1]) + vry * xs[:, 0]),
+                np.nan,
+            )
+        else:
+            phi_arr = np.array([controller(ti) for ti in tt])
+        T_arr = sig_arr * rk.Fmax2
+        seg2 = Segment(tt, xs, vrx, vry, gamma, gamma_rel, phi_arr, T_arr, sig_arr, "stage2")
+        st.append(seg2)
+
+        # --- 拼接 ---
+        t = np.concatenate([s.t for s in st])
+        x = np.vstack([s.x for s in st])
+        vrx = np.concatenate([s.vrx for s in st])
+        vry = np.concatenate([s.vry for s in st])
+        gamma = np.concatenate([s.gamma for s in st])
+        gamma_rel = np.concatenate([s.gamma_rel for s in st])
+        phi = np.concatenate([s.phi for s in st])
+        T = np.concatenate([s.T for s in st])
+        sig = np.concatenate([s.sigma for s in st])
+        names = []
+        for s in st:
+            names += [s.name] * len(s.t)
+        return SimResult(t, x, vrx, vry, gamma, gamma_rel, phi, T, sig, names,
+                         t1, t2, t_shut, st)
+
+
+# ---------------------------------------------------------------------------
+# 入轨条件残差（问题 2~4 共用）
+# ---------------------------------------------------------------------------
+def orbit_residual(xf: np.ndarray, rk: RocketParams) -> np.ndarray:
+    """由关机时刻惯性状态计算入轨条件残差（无量纲）。
+
+    三个分量：半径、速度、径向速度（r·v）。
+    xf = [x, y, vx, vy, m]（惯性）。
+    """
+    r = np.hypot(xf[0], xf[1])
+    v = np.hypot(xf[2], xf[3])
+    rdot = (xf[0] * xf[2] + xf[1] * xf[3]) / r
+    return np.array([
+        (r - rk.a_target) / R_E,
+        (v - rk.v_circular) / rk.v_circular,
+        rdot / rk.v_circular,
+    ])
+
+
+def fmt_residual(res: np.ndarray) -> str:
+    return "[" + ", ".join(f"{v:+.2e}" for v in res) + "]"
+
+\end{lstlisting}
+\clearpage
+\section{问题一基准仿真 q1\_baseline.py}
+\begin{lstlisting}[language=Python]
+"""问题 1：基准控制策略下的全程动力学仿真。
+
+基准策略（题目给定）：
+- 一子级：额定最大推力；垂直起飞 10 s 后俯仰角以 0.4deg/s 线性减小（程序转弯），
+  直至推进剂耗尽关机分离；
+- 二子级：全额推力，推力方向始终与（相对大气）速度方向一致（恒攻角为零）；
+- 滑行时间 60 s。
+输出：起飞至二子级燃料耗尽全程的高度、速度、飞行路径角、总质量曲线，
+以及二子级关机时刻的轨道高度、惯性速度与飞行路径角。
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from common import (
+    DEG,
+    R_E,
+    RES_DIR,
+    FIG_DIR,
+    RocketParams,
+    Simulator,
+    orbit_residual,
+)
+
+plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial"]
+plt.rcParams["axes.unicode_minus"] = False
+
+
+def phase_boundaries(res) -> dict:
+    """各阶段边界时刻（供绘图竖线）。"""
+    return {
+        "垂直段结束": res.stages[0].t[-1],
+        "一子级关机": res.t1,
+        "二子级点火": res.t2,
+        "二子级关机": res.t_shut,
+    }
+
+
+def plot_profiles(res: SimResult, rk: RocketParams, fname: str) -> None:
+    """四联图：高度、惯性速度、飞行路径角、总质量（含阶段边界竖线）。"""
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+
+    ax = axes[0, 0]
+    ax.plot(res.t / 60.0, res.h / 1e3, lw=1.6, color="tab:blue")
+    ax.set_xlabel("时间 t (min)")
+    ax.set_ylabel("高度 h (km)")
+    ax.set_title("(a) 飞行高度")
+    ax.grid(alpha=0.4)
+
+    ax = axes[0, 1]
+    ax.plot(res.t / 60.0, res.v_in / 1e3, lw=1.6, color="tab:red")
+    ax.axhline(rk.v_circular / 1e3, ls="--", lw=1.0, color="gray",
+               label=f"目标圆轨道速度 {rk.v_circular/1e3:.1f} km/s")
+    ax.set_xlabel("时间 t (min)")
+    ax.set_ylabel("惯性速度 V (km/s)")
+    ax.set_title("(b) 惯性速度")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.4)
+
+    ax = axes[1, 0]
+    ax.plot(res.t / 60.0, res.gamma / DEG, lw=1.6, color="tab:green", label="惯性 gamma")
+    ax.plot(res.t / 60.0, res.gamma_rel / DEG, lw=1.2, ls="--", color="tab:orange",
+            label="相对大气 gamma")
+    ax.set_xlabel("时间 t (min)")
+    ax.set_ylabel("飞行路径角 gamma (deg)")
+    ax.set_title("(c) 飞行路径角")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.4)
+
+    ax = axes[1, 1]
+    ax.plot(res.t / 60.0, res.m / 1e3, lw=1.6, color="tab:purple")
+    ax.set_xlabel("时间 t (min)")
+    ax.set_ylabel("总质量 m (t)")
+    ax.set_title("(d) 总质量")
+    ax.grid(alpha=0.4)
+
+    for ax in axes.ravel():
+        for name, tb in phase_boundaries(res).items():
+            if tb is not None:
+                ax.axvline(tb / 60.0, ls=":", lw=0.8, color="k", alpha=0.5)
+    fig.suptitle("问题 1：基准控制策略全程飞行曲线", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(FIG_DIR / fname, dpi=150)
+    plt.close(fig)
+
+
+def plot_trajectory(res: SimResult, fname: str) -> None:
+    """地面轨迹（经度 vs 高度）与轨道图。"""
+    rx, ry = res.x[:, 0], res.x[:, 1]
+    lon = np.arctan2(ry, rx) / DEG
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    ax = axes[0]
+    ax.plot(lon, res.h / 1e3, lw=1.5, color="tab:blue")
+    # 阶段着色（用散点区分）
+    for name, color in [("vertical", "tab:blue"), ("pitch-over", "tab:green"),
+                        ("coast", "tab:orange"), ("stage2", "tab:red")]:
+        mask = np.array([p == name for p in res.phase])
+        if mask.any():
+            ax.plot(lon[mask], res.h[mask] / 1e3, lw=1.8, color=color, label=name)
+    ax.set_xlabel("经度 (deg)")
+    ax.set_ylabel("高度 h (km)")
+    ax.set_title("发射轨迹（经度-高度）")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.4)
+
+    ax = axes[1]
+    theta = np.linspace(0, 2 * np.pi, 400)
+    ax.plot(R_E * np.cos(theta) / 1e3, R_E * np.sin(theta) / 1e3,
+            lw=1.0, color="gray", label="地球表面")
+    ax.plot([0, 0], [-R_E / 1e3, R_E / 1e3], color="k", lw=0.5)
+    ax.plot(rx / 1e3, ry / 1e3, lw=1.8, color="tab:red", label="火箭轨迹")
+    ax.plot(rx[0] / 1e3, ry[0] / 1e3, "ko", ms=5, label="发射点")
+    ax.plot(rx[-1] / 1e3, ry[-1] / 1e3, "k*", ms=12, label="关机点")
+    ax.set_aspect("equal")
+    ax.set_xlabel("x (km)")
+    ax.set_ylabel("y (km)")
+    ax.set_title("赤道平面内轨迹")
+    ax.legend(fontsize=8, loc="lower right")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / fname, dpi=150)
+    plt.close(fig)
+
+
+def main() -> None:
+    rk = RocketParams()
+    sim = Simulator(rk)
+    res = sim.simulate(t_coast=rk.t_coast_q1, controller=None, t_shut=None)
+
+    print("=" * 72)
+    print("问题 1：基准控制策略仿真结果")
+    print("=" * 72)
+    print(f"一子级质量流量        mdot1 = {rk.mdot1:10.2f} kg/s")
+    print(f"一子级推进剂耗尽时刻  t1    = {rk.t_burn1:10.2f} s")
+    print(f"二子级质量流量        mdot2 = {rk.mdot2:10.2f} kg/s")
+    print(f"二子级推进剂耗尽时长  tb2   = {rk.t_burn2:10.2f} s")
+    print(f"分离时一子级关机质量        = {rk.M0 - rk.mp1:10.0f} kg")
+    print(f"二子级点火质量（分离后）    = {rk.m_after_sep:10.0f} kg")
+    print("-" * 72)
+    print("各阶段边界时刻：")
+    for name, tb in phase_boundaries(res).items():
+        print(f"  {name:<8s} t = {tb:8.2f} s" if tb is not None else f"  {name:<8s} --")
+    print("-" * 72)
+    fs = res.final_state()
+    print("二子级关机时刻状态（最终）：")
+    print(f"  轨道高度 h     = {fs['h_km']:10.2f} km    (目标 400 km)")
+    print(f"  惯性速度 V     = {fs['v_in_mps']:10.2f} m/s  (圆轨道 {rk.v_circular:.2f} m/s)")
+    print(f"  飞行路径角 gamma   = {fs['gamma_deg']:10.4f} deg (惯性) / "
+          f"{fs['gamma_rel_deg']:.4f} deg (相对大气)")
+    print(f"  总质量 m       = {fs['m_kg']:10.0f} kg   (结构+载荷 = {rk.ms2 + rk.m_payload:.0f} kg)")
+    res_orb = orbit_residual(res.x[-1], rk)
+    print(f"  入轨条件残差   = {res_orb}  (0 为精确入轨)")
+    print("-" * 72)
+    print("说明：基准策略下二子级燃料耗尽即关机，入轨条件不一定满足；")
+    print("      超出/不足的差异即问题 2 需要修正的内容。")
+
+    # ---- 保存结果 ----
+    df = pd.DataFrame({
+        "t_s": res.t,
+        "h_km": res.h / 1e3,
+        "V_inertial_mps": res.v_in,
+        "gamma_inertial_deg": res.gamma / DEG,
+        "gamma_rel_deg": res.gamma_rel / DEG,
+        "m_kg": res.m,
+        "T_N": res.T,
+        "phase": res.phase,
+    })
+    df.to_csv(RES_DIR / "q1_full_trajectory.csv", index=False)
+
+    summary = {
+        "t1_burn1_s": rk.t_burn1,
+        "t2_ignite_s": res.t2,
+        "t_shut_s": res.t_shut,
+        "h_final_km": fs["h_km"],
+        "v_final_mps": fs["v_in_mps"],
+        "gamma_final_deg": fs["gamma_deg"],
+        "gamma_rel_final_deg": fs["gamma_rel_deg"],
+        "m_final_kg": fs["m_kg"],
+        "h_target_km": rk.H_target / 1e3,
+        "v_circular_mps": rk.v_circular,
+    }
+    pd.DataFrame([summary]).to_csv(RES_DIR / "q1_summary.csv", index=False)
+
+    plot_profiles(res, rk, "q1_flight_profiles.png")
+    plot_trajectory(res, "q1_trajectory.png")
+    print(f"已保存：{RES_DIR / 'q1_full_trajectory.csv'}, {RES_DIR / 'q1_summary.csv'}")
+    print(f"已保存：{FIG_DIR / 'q1_flight_profiles.png'}, {FIG_DIR / 'q1_trajectory.png'}")
+
+
+if __name__ == "__main__":
+    main()
+
+\end{lstlisting}
+\clearpage
+\section{问题二入轨打靶 q2\_inscription.py}
+\begin{lstlisting}[language=Python]
+"""问题 2：入轨条件反演 —— 调整滑行时间与二子级俯仰角变化率（可提前关机）。
+
+控制策略（题目给定）：
+- 二子级推力俯仰角以恒定速率 k 变化，初始俯仰角与（相对大气）速度方向一致；
+- 二子级维持额定全推力；
+- 关机时刻 t_shut 由入轨条件决定（可提前关机）；
+- 目标：进入 400 km 近地圆轨道。
+
+入轨条件（惯性系，3 个等式）：
+    |r| = R_E + H,  |v| = sqrt(mu/|r|),  r·v = 0
+
+未知量 (t_coast, k, t_shut) 共 3 个、方程 3 个 -> 三维打靶（fsolve 多初值）。
+点火前轨迹只与 t_coast 有关，缓存之；二级段单独快速积分。
+"""
+
+from __future__ import annotations
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.integrate import solve_ivp
+from scipy.optimize import fsolve
+
+from common import (
+    DEG,
+    MU,
+    RES_DIR,
+    FIG_DIR,
+    RocketParams,
+    Simulator,
+    orbit_residual,
+    rel_velocity,
+    thrust_unit,
+)
+
+plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial"]
+plt.rcParams["axes.unicode_minus"] = False
+
+
+class InscriptionSolver:
+    """问题 2 三维打靶求解器。"""
+
+    def __init__(self, rk: RocketParams | None = None, rtol: float = 1e-9):
+        self.rk = rk or RocketParams()
+        self.rtol = rtol
+        self._ign_cache: dict[float, tuple[np.ndarray, float]] = {}
+
+    # -- 点火前状态缓存（只与 t_coast 有关）-------------------------------
+    def ignition_state(self, t_coast: float) -> tuple[np.ndarray, float]:
+        key = round(t_coast, 6)
+        if key not in self._ign_cache:
+            sim = Simulator(self.rk)
+            res = sim.simulate(
+                t_coast=key, controller=None,
+                t_shut=self.rk.t_burn1 + key + 1e-6,
+                rtol=self.rtol,
+            )
+            seg = res.stages[-1]
+            self._ign_cache[key] = (seg.x[0].copy(), float(seg.t[0]))
+        return self._ign_cache[key]
+
+    # -- 二级段单次积分 ----------------------------------------------------
+    def stage2_end(
+        self, x0: np.ndarray, t2: float, phi0: float,
+        k_deg_s: float, t_shut: float,
+    ) -> np.ndarray:
+        k = k_deg_s * DEG
+        rk = self.rk
+
+        def rhs(t, x):
+            p = phi0 + k * (t - t2)
+            tx_h, ty_h = thrust_unit(p, x[0], x[1])
+            T = rk.Fmax2
+            r = np.hypot(x[0], x[1])
+            ax = -MU / r**3 * x[0] + T / x[4] * tx_h
+            ay = -MU / r**3 * x[1] + T / x[4] * ty_h
+            return np.array([x[2], x[3], ax, ay, -T / (rk.Isp2 * 9.80665)])
+
+        sol = solve_ivp(
+            rhs, (t2, t_shut), x0, method="DOP853",
+            rtol=self.rtol, atol=[1e-2, 1e-2, 1e-4, 1e-4, 1e-2],
+        )
+        return sol.y[:, -1]
+
+    # -- 残差 --------------------------------------------------------------
+    def residual(self, z: np.ndarray) -> np.ndarray:
+        t_coast, k_deg_s, t_shut = z
+        x0, t2 = self.ignition_state(t_coast)
+        vrx, vry = rel_velocity(x0[0], x0[1], x0[2], x0[3])
+        phi0 = np.arctan2(vrx * x0[0] + vry * x0[1], vrx * (-x0[1]) + vry * x0[0])
+        if t_shut > t2 + self.rk.t_burn2:   # 超出燃尽上限 -> 罚
+            return np.array([1.0, 1.0, 0.0])
+        xf = self.stage2_end(x0, t2, phi0, k_deg_s, t_shut)
+        return orbit_residual(xf, self.rk)
+
+    # -- 多初值打靶 ---------------------------------------------------------
+    def solve(self, starts=None) -> list[tuple[np.ndarray, float]]:
+        if starts is None:
+            starts = []
+            for tc in [0.0, 30.0, 60.0, 90.0, 120.0, 150.0, 180.0]:
+                for k in [-0.4, -0.2, -0.1, -0.05, 0.0, 0.1, 0.2]:
+                    for ts in [350.0, 450.0, 550.0, 650.0]:
+                        starts.append((tc, k, ts))
+        sols = {}
+        for z0 in starts:
+            # 可行域检查：燃尽上限保护
+            x0, t2 = self.ignition_state(z0[0])
+            if z0[2] > t2 + self.rk.t_burn2:
+                continue
+            try:
+                sol, info, ier, msg = fsolve(
+                    self.residual, np.array(z0, float), full_output=True, xtol=1e-11,
+                )
+                if ier == 1:
+                    n = float(np.linalg.norm(self.residual(sol)))
+                    key = (round(sol[0], 1), round(sol[1], 4))
+                    if key not in sols or n < sols[key][1]:
+                        sols[key] = (sol, n)
+            except Exception:
+                pass
+        return sorted(sols.values(), key=lambda kv: kv[1])
+
+
+def main() -> None:
+    rk = RocketParams()
+    solver = InscriptionSolver(rk)
+
+    print("=" * 72)
+    print("问题 2：入轨打靶（网格多初值 + fsolve）")
+    print("=" * 72)
+    sols = solver.solve()
+    print(f"找到 {len(sols)} 组收敛根（按残差排序）：")
+    for i, (sol, n) in enumerate(sols[:6]):
+        print(f"  #{i+1}: t_c={sol[0]:8.3f} s  k={sol[1]:8.4f} deg/s  "
+              f"t_shut={sol[2]:8.3f} s  |res|={n:.2e}")
+
+    if not sols:
+        print("未找到可行解！")
+        return
+
+    sol, n = sols[0]
+    t_coast, k_deg_s, t_shut = sol
+
+    # ---- 完整重仿验证（用 Simulator 的完整流程，含事件检测与燃尽保护）----
+    x0, t2 = solver.ignition_state(t_coast)
+    vrx, vry = rel_velocity(x0[0], x0[1], x0[2], x0[3])
+    phi0 = np.arctan2(vrx * x0[0] + vry * x0[1], vrx * (-x0[1]) + vry * x0[0])
+    k = k_deg_s * DEG
+
+    def controller(t):
+        return phi0 + k * (t - t2)
+
+    sim = Simulator(rk)
+    res = sim.simulate(t_coast=t_coast, controller=controller, t_shut=t_shut)
+    fs_ = res.final_state()
+
+    print("-" * 72)
+    print("最终验证（入轨时刻状态）：")
+    print(f"  滑行时间    t_c    = {t_coast:.3f} s")
+    print(f"  俯仰角速率  k      = {k_deg_s:.4f} deg/s")
+    print(f"  初始俯仰角  phi0   = {phi0 / DEG:.4f} deg（与点火时刻速度方向一致）")
+    print(f"  一子级关机  t1     = {res.t1:.3f} s；二子级点火 t2 = {t2:.3f} s")
+    print(f"  关机时刻    t_shut = {t_shut:.3f} s（燃尽上限 {t2 + rk.t_burn2:.3f} s）")
+    print(f"  轨道高度    h      = {fs_['h_km']:.4f} km（目标 400）")
+    print(f"  惯性速度    V      = {fs_['v_in_mps']:.3f} m/s（目标 {rk.v_circular:.3f}）")
+    print(f"  飞行路径角  gamma      = {fs_['gamma_deg']:.5f} deg（目标 0）")
+    print(f"  关机质量    m      = {fs_['m_kg']:.1f} kg（剩余推进剂 "
+          f"{fs_['m_kg'] - rk.ms2 - rk.m_payload:.1f} kg）")
+    print(f"  入轨残差           = {orbit_residual(res.x[-1], rk)}")
+
+    # ---- 保存 & 绘图 ----
+    df = pd.DataFrame({
+        "t_s": res.t, "h_km": res.h / 1e3, "V_mps": res.v_in,
+        "gamma_deg": res.gamma / DEG, "m_kg": res.m, "phase": res.phase,
+    })
+    df.to_csv(RES_DIR / "q2_trajectory.csv", index=False)
+    pd.DataFrame([{
+        "t_coast_s": t_coast, "k_deg_s": k_deg_s, "t_shut_s": t_shut,
+        "phi0_deg": phi0 / DEG,
+        "h_final_km": fs_["h_km"], "v_final_mps": fs_["v_in_mps"],
+        "gamma_final_deg": fs_["gamma_deg"],
+        "m_final_kg": fs_["m_kg"],
+        "propellant_remaining_kg": fs_["m_kg"] - rk.ms2 - rk.m_payload,
+        "residual_norm": n,
+    }]).to_csv(RES_DIR / "q2_summary.csv", index=False)
+
+    fig, axes = plt.subplots(3, 1, figsize=(10, 9))
+    ax = axes[0]
+    ax.plot(res.t / 60, res.h / 1e3, lw=1.6, color="tab:blue")
+    ax.axhline(400, ls="--", color="gray", label="目标轨道 400 km")
+    ax.axvline(res.t2 / 60, ls=":", color="k", alpha=0.4, label="二子级点火")
+    ax.axvline(res.t_shut / 60, ls=":", color="r", alpha=0.5, label="关机")
+    ax.set_xlabel("时间 t (min)"); ax.set_ylabel("高度 h (km)")
+    ax.set_title("问题 2 入轨轨迹：h(t)"); ax.legend(fontsize=8); ax.grid(alpha=0.4)
+
+    ax = axes[1]
+    ax.plot(res.t / 60, res.v_in / 1e3, lw=1.6, color="tab:red")
+    ax.axhline(rk.v_circular / 1e3, ls="--", color="gray",
+               label=f"圆轨道速度 {rk.v_circular/1e3:.2f} km/s")
+    ax.set_xlabel("时间 t (min)"); ax.set_ylabel("惯性速度 V (km/s)")
+    ax.set_title("V(t)"); ax.legend(fontsize=8); ax.grid(alpha=0.4)
+
+    ax = axes[2]
+    ax.plot(res.t / 60, res.gamma / DEG, lw=1.6, color="tab:green")
+    ax.axhline(0, ls="--", color="gray", label="gamma = 0")
+    ax.set_xlabel("时间 t (min)"); ax.set_ylabel("飞行路径角 gamma (deg)")
+    ax.set_title("gamma(t)"); ax.legend(fontsize=8); ax.grid(alpha=0.4)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "q2_orbit_inscription.png", dpi=150)
+    plt.close(fig)
+    print(f"已保存：{RES_DIR / 'q2_trajectory.csv'}, {RES_DIR / 'q2_summary.csv'}, "
+          f"{FIG_DIR / 'q2_orbit_inscription.png'}")
+
+
+if __name__ == "__main__":
+    main()
+
+\end{lstlisting}
+\clearpage
+\section{问题三燃料最省 q3\_fuel\_opt.py}
+\begin{lstlisting}[language=Python]
+"""问题 3：设计滑行时间与二子级俯仰角优化控制策略，使二子级燃料消耗最省。
+
+优化问题：
+    min  J = 二子级消耗推进剂 = m(t2+) - m(t_shut)   （等价 max m(t_shut)）
+    s.t. 入轨条件 3 等式（|r|=a, |v|=sqrt(mu/a), r·v=0）
+         俯仰角 phi(t) 以分段线性控制律参数化（N 段节点值）
+         关机时刻 t_shut 自由（由入轨条件决定，可提前关机）
+
+求解：控制参数化（分段线性）+ 直接打靶 + SLSQP（带入轨等式约束），
+     多初值（含问题 2 的解作为初值）避免局部解。
+"""
+
+from __future__ import annotations
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.integrate import solve_ivp
+from scipy.optimize import minimize
+
+from common import (
+    DEG,
+    MU,
+    RES_DIR,
+    FIG_DIR,
+    RocketParams,
+    Simulator,
+    orbit_residual,
+    rel_velocity,
+    thrust_unit,
+)
+
+plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial"]
+plt.rcParams["axes.unicode_minus"] = False
+
+N_PHI = 5          # 俯仰角控制节点数（分段线性）
+N_GRID_TIMES = 6   # 初值扫描点火前网格数量
+
+
+class FuelOptimizer:
+    """问题 3：燃料最省优化器（控制参数化 + SLSQP）。"""
+
+    def __init__(self, rk: RocketParams | None = None, n_phi: int = N_PHI, rtol: float = 1e-9):
+        self.rk = rk or RocketParams()
+        self.n_phi = n_phi
+        self.rtol = rtol
+        self._ign_cache: dict[float, tuple[np.ndarray, float]] = {}
+
+    def ignition_state(self, t_coast: float) -> tuple[np.ndarray, float]:
+        key = round(t_coast, 6)
+        if key not in self._ign_cache:
+            sim = Simulator(self.rk)
+            res = sim.simulate(
+                t_coast=key, controller=None,
+                t_shut=self.rk.t_burn1 + key + 1e-6, rtol=self.rtol,
+            )
+            seg = res.stages[-1]
+            self._ign_cache[key] = (seg.x[0].copy(), float(seg.t[0]))
+        return self._ign_cache[key]
+
+    def phi0_of(self, x0: np.ndarray) -> float:
+        """点火时刻相对速度路径角 = 初始俯仰角基准。"""
+        vrx, vry = rel_velocity(x0[0], x0[1], x0[2], x0[3])
+        return float(np.arctan2(vrx * x0[0] + vry * x0[1], vrx * (-x0[1]) + vry * x0[0]))
+
+    # -- 二级段积分（phi 用控制节点线性插值，节点时间线性分布于 [t2, t_shut]）--
+    def stage2_end(self, x0, t2, phi0, phi_nodes, t_shut):
+        rk = self.rk
+        n = self.n_phi
+        # 节点时刻（相对 t2），等距分布于 [0, t_shut-t2]
+        tau_nodes = np.linspace(0.0, 1.0, n)
+        # phi 节点值与 phi0 拼接：第一段起点即 phi0 -> 用 (phi0, phi_nodes) 长度 n+1？
+        # 更简单：节点值为绝对俯仰角 [deg]，首点固定 phi0，其余优化
+        phi_abs = np.concatenate(([phi0 / DEG], phi_nodes))   # 长度 n
+
+        def phi_at(tau):
+            return np.interp(tau, tau_nodes, phi_abs) * DEG
+
+        def rhs(t, x):
+            tau = (t - t2) / (t_shut - t2)
+            p = phi_at(tau)
+            tx_h, ty_h = thrust_unit(p, x[0], x[1])
+            T = rk.Fmax2
+            r = np.hypot(x[0], x[1])
+            ax = -MU / r**3 * x[0] + T / x[4] * tx_h
+            ay = -MU / r**3 * x[1] + T / x[4] * ty_h
+            return np.array([x[2], x[3], ax, ay, -T / (rk.Isp2 * 9.80665)])
+
+        sol = solve_ivp(rhs, (t2, max(t_shut, t2 + 1e-3)), x0, method="DOP853",
+                        rtol=self.rtol, atol=[1e-2, 1e-2, 1e-4, 1e-4, 1e-2])
+        return sol.y[:, -1]
+
+    # -- 目标 + 约束 --------------------------------------------------------
+    def evaluate(self, z: np.ndarray):
+        """决策向量 z = [t_coast, phi_1..phi_{n-1}, t_shut]。返回 (目标, 残差)。"""
+        t_coast = z[0]
+        phi_nodes = z[1:-1]
+        t_shut = z[-1]
+        x0, t2 = self.ignition_state(t_coast)
+        phi0 = self.phi0_of(x0)
+        m_ignit = x0[4]
+        if t_shut < t2 + 1.0 or t_shut > t2 + self.rk.t_burn2:
+            # 罚：理想目标给大值
+            return 1e6 + abs(t_shut - t2), np.array([1.0, 1.0, 1.0])
+        xf = self.stage2_end(x0, t2, phi0, phi_nodes, t_shut)
+        prop_used = m_ignit - xf[4]
+        res = orbit_residual(xf, self.rk)
+        return prop_used, res
+
+    def objective(self, z: np.ndarray) -> float:
+        prop_used, res = self.evaluate(z)
+        # 罚函数：入轨残差违反时惩罚（SLSQP 也用约束，双保险）
+        penalty = 1e3 * float(np.sum(res**2))
+        return prop_used + penalty
+
+    def constraint_eq(self, z: np.ndarray) -> np.ndarray:
+        _, res = self.evaluate(z)
+        return res
+
+    # -- 求解 ---------------------------------------------------------------
+    def _solve_one(self, z0: np.ndarray, maxiter: int) -> tuple | None:
+        """单初值 SLSQP（供并行调用）。"""
+        cons = {"type": "eq", "fun": lambda z: self.constraint_eq(z) * 1e2}
+        opt = minimize(
+            self.objective, z0, method="SLSQP",
+            bounds=[(0.0, 400.0)] + [(-90.0, 90.0)] * (self.n_phi - 1)
+                   + [(0.0, 1e3)],
+            constraints=[cons],
+            options={"ftol": 1e-8, "maxiter": maxiter, "disp": False},
+        )
+        prop_used, res = self.evaluate(opt.x)
+        if np.linalg.norm(res) < 1e-5:
+            return opt.x, prop_used, float(np.linalg.norm(res))
+        return None
+
+    def solve(self, starts: list[np.ndarray], maxiter: int = 60, workers: int = 8):
+        from concurrent.futures import ProcessPoolExecutor
+        results = []
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(self._solve_one, z0, maxiter) for z0 in starts]
+            for fut in futures:
+                r = fut.result()
+                if r is not None:
+                    results.append(r)
+        results.sort(key=lambda r: r[1])
+        return results
+
+
+def make_starts(rk, n_phi) -> list[np.ndarray]:
+    """初值集合：覆盖滑行时间 0~300s、俯仰角律多种形状（线性/凸/凹）。"""
+    s = Simulator(rk)
+    starts = []
+    bt = rk.t_burn2
+    opt0 = FuelOptimizer(rk)
+    for tc in [0.0, 60.0, 90.0, 113.0, 130.0, 160.0, 200.0, 250.0, 300.0]:
+        res = s.simulate(t_coast=tc, controller=None, t_shut=rk.t_burn1 + tc + 1e-6)
+        x0 = res.stages[-1].x[0]
+        phi0 = opt0.phi0_of(x0)
+        t2 = float(res.stages[-1].t[0])
+        for shape in [-1.0, -0.3, 0.0, 0.3, 1.0]:
+            z = np.zeros(n_phi + 1)
+            z[0] = tc
+            # phi(tau) = phi0 + shape * (phi_land - phi0) * tau^p，p=1 线性、p>1 凸、p<1 凹
+            # 取终端俯仰角目标 phi_land 为 5deg 附近（gamma 需归零），用形状参数生成
+            phi_land = 4.0
+            for j in range(n_phi - 1):
+                tau = (j + 1) / n_phi
+                p = 1.0 if shape == 0 else (2.0 if shape > 0 else 0.5)
+                z[1 + j] = phi0 / DEG + (phi_land - phi0 / DEG) * tau**p
+            z[-1] = t2 + 0.85 * bt
+            starts.append(z)
+    return starts
+
+
+def main() -> None:
+    rk = RocketParams()
+    opt = FuelOptimizer(rk)
+    print("=" * 72)
+    print("问题 3：二子级燃料最省（滑行时间 + 俯仰角分段线性控制）")
+    print(f"控制节点数 N_phi = {opt.n_phi}（首点固定为初始俯仰角）")
+    print("=" * 72)
+
+    starts = make_starts(rk, opt.n_phi)
+    print(f"初值数量：{len(starts)}")
+    results = opt.solve(starts)
+    print(f"收敛解数量：{len(results)}")
+    if not results:
+        print("未找到满足入轨条件的解！")
+        return
+
+    z_best, prop_used, nres = results[0]
+    # 双精度重算并输出
+    z_best = np.array(z_best, float)
+    prop_used, res = opt.evaluate(z_best)
+    t_coast, phi_nodes, t_shut = z_best[0], z_best[1:-1], z_best[-1]
+    x0, t2 = opt.ignition_state(t_coast)
+    phi0 = opt.phi0_of(x0)
+
+    print("-" * 72)
+    print(f"最优解：")
+    print(f"  滑行时间    t_c    = {t_coast:.4f} s")
+    print(f"  关机时刻    t_shut = {t_shut:.4f} s（点火 t2 = {t2:.4f} s，"
+          f"燃尽上限 {t2 + rk.t_burn2:.4f} s）")
+    print(f"  俯仰角节点（deg）：", end="")
+    tau_nodes = np.linspace(0.0, 1.0, opt.n_phi)
+    for k, v in zip(tau_nodes, np.concatenate(([phi0 / DEG], phi_nodes))):
+        print(f" [{k:.2f}]:{v:.3f}", end="")
+    print()
+    print(f"  二子级消耗推进剂 = {prop_used:.1f} kg")
+    print(f"  关机质量        = {x0[4] - prop_used:.1f} kg（剩余推进剂 "
+          f"{x0[4] - prop_used - rk.ms2 - rk.m_payload:.1f} kg）")
+    print(f"  入轨残差 |res|   = {nres:.2e}")
+
+    # 与问题 2 解对比
+    q2 = pd.read_csv(RES_DIR / "q2_summary.csv").iloc[0]
+    print("-" * 72)
+    print(f"对比问题 2（恒定俯仰角速率 k = {q2['k_deg_s']:.4f} deg/s）：")
+    print(f"  Q2 消耗推进剂 = {rk.mp2 - q2['propellant_remaining_kg']:.1f} kg")
+    print(f"  Q3 消耗推进剂 = {prop_used:.1f} kg（节省 {rk.mp2 - q2['propellant_remaining_kg'] - prop_used:.1f} kg）")
+
+    # ---- 完整仿真重新验证 ----
+    def controller(t):
+        tau = (t - t2) / (t_shut - t2)
+        phi_abs = np.concatenate(([phi0 / DEG], phi_nodes))
+        return float(np.interp(tau, tau_nodes, phi_abs) * DEG)
+
+    sim = Simulator(rk)
+    res = sim.simulate(t_coast=t_coast, controller=controller, t_shut=t_shut)
+    fs_ = res.final_state()
+    import numpy as _np
+    x0v, t2v = opt.ignition_state(t_coast)
+    print(f"[dbg] phi0_match={abs(phi0 - opt.phi0_of(x0v)):.2e} t2v={t2v:.6f} "
+          f"t_shut={t_shut:.6f} t2={t2:.6f}")
+    print(f"[dbg] evaluate res={opt.evaluate(z_best)[1]}  sim res={orbit_residual(res.x[-1], rk)}")
+    print("-" * 72)
+    print("完整仿真验证：")
+    print(f"  h = {fs_['h_km']:.4f} km, V = {fs_['v_in_mps']:.3f} m/s, "
+          f"gamma = {fs_['gamma_deg']:.5f} deg")
+    print(f"  入轨残差 = {orbit_residual(res.x[-1], rk)}")
+
+    # ---- 保存 ----
+    pd.DataFrame([{
+        "t_coast_s": t_coast, "t_shut_s": t_shut,
+        "phi_nodes_deg": " | ".join(f"{v:.4f}" for v in phi_nodes),
+        "phi0_deg": phi0 / DEG,
+        "propellant_used_kg": prop_used,
+        "m_final_kg": fs_["m_kg"],
+        "propellant_remaining_kg": fs_["m_kg"] - rk.ms2 - rk.m_payload,
+        "residual_norm": nres,
+    }]).to_csv(RES_DIR / "q3_summary.csv", index=False)
+    df = pd.DataFrame({
+        "t_s": res.t, "h_km": res.h / 1e3, "V_mps": res.v_in,
+        "gamma_deg": res.gamma / DEG, "m_kg": res.m,
+        "phi_deg": res.phi / DEG, "phase": res.phase,
+    })
+    df.to_csv(RES_DIR / "q3_trajectory.csv", index=False)
+
+    # ---- 绘图：控制律与轨迹 ----
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    ax = axes[0, 0]
+    ax.plot(res.t / 60, res.h / 1e3, lw=1.6)
+    ax.axhline(400, ls="--", color="gray", label="目标轨道")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("h (km)"); ax.legend(fontsize=8)
+    ax.set_title("高度"); ax.grid(alpha=0.4)
+    ax = axes[0, 1]
+    ax.plot(res.t / 60, res.v_in / 1e3, lw=1.6, color="tab:red")
+    ax.axhline(rk.v_circular / 1e3, ls="--", color="gray", label="圆轨道速度")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("V (km/s)"); ax.legend(fontsize=8)
+    ax.set_title("惯性速度"); ax.grid(alpha=0.4)
+    ax = axes[1, 0]
+    ax.plot(res.t / 60, res.gamma / DEG, lw=1.6, color="tab:green")
+    ax.axhline(0, ls="--", color="gray")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("gamma (deg)")
+    ax.set_title("飞行路径角"); ax.grid(alpha=0.4)
+    ax = axes[1, 1]
+    ax.plot(res.t[res.t >= t2] / 60, res.phi[res.t >= t2] / DEG, lw=1.6, color="tab:purple")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("俯仰角 phi (deg)")
+    ax.set_title("二子级俯仰角控制律（分段线性）"); ax.grid(alpha=0.4)
+    fig.suptitle("问题 3：燃料最省最优轨迹与最优控制", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(FIG_DIR / "q3_fuel_optimal.png", dpi=150)
+    plt.close(fig)
+    print(f"已保存：{RES_DIR / 'q3_summary.csv'}, {RES_DIR / 'q3_trajectory.csv'}, "
+          f"{FIG_DIR / 'q3_fuel_optimal.png'}")
+
+
+if __name__ == "__main__":
+    main()
+
+\end{lstlisting}
+\clearpage
+\section{问题四节流优化 q4\_throttle\_opt.py}
+\begin{lstlisting}[language=Python]
+"""问题 4：二子级发动机具备推力节流能力（60%~100% 额定推力）下，
+重新设计滑行时间与二子级推力大小、俯仰角的优化控制策略，使燃料消耗最省。
+
+优化问题：
+    min  J = 二子级消耗推进剂 = integral mdotdt = integral (sigma(t)·Fmax2)/(Isp2·g0) dt
+    s.t. 入轨条件 3 等式（|r|=a, |v|=sqrt(mu/a), r·v=0）
+         节流比 sigma(t)  in  [0.6, 1]（分段线性参数化）
+         俯仰角 phi(t) 分段线性参数化（首点取点火时刻速度方向）
+         关机时刻 t_shut 自由（由入轨条件决定）
+
+求解：控制参数化（phi 与 sigma 均 N 节点分段线性）+ 直接打靶 + SLSQP 多初值。
+"""
+
+from __future__ import annotations
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.integrate import solve_ivp
+from scipy.optimize import minimize
+
+from common import (
+    DEG,
+    MU,
+    RES_DIR,
+    FIG_DIR,
+    RocketParams,
+    Simulator,
+    orbit_residual,
+    rel_velocity,
+    thrust_unit,
+)
+
+plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial"]
+plt.rcParams["axes.unicode_minus"] = False
+
+N_SIGMA = 4   # 节流比控制节点数
+SIGMA_MIN = 0.6
+
+
+class ThrottleOptimizer:
+    """问题 4：节流 + 俯仰角联合优化（控制参数化 + SLSQP）。"""
+
+    def __init__(self, rk: RocketParams | None = None,
+                 n_phi: int = 5, n_sigma: int = N_SIGMA, rtol: float = 1e-9):
+        self.rk = rk or RocketParams()
+        self.n_phi = n_phi
+        self.n_sigma = n_sigma
+        self.rtol = rtol
+        self._ign_cache: dict[float, tuple[np.ndarray, float]] = {}
+
+    def ignition_state(self, t_coast: float) -> tuple[np.ndarray, float]:
+        key = round(t_coast, 6)
+        if key not in self._ign_cache:
+            sim = Simulator(self.rk)
+            res = sim.simulate(
+                t_coast=key, controller=None,
+                t_shut=self.rk.t_burn1 + key + 1e-6, rtol=self.rtol,
+            )
+            seg = res.stages[-1]
+            self._ign_cache[key] = (seg.x[0].copy(), float(seg.t[0]))
+        return self._ign_cache[key]
+
+    def phi0_of(self, x0: np.ndarray) -> float:
+        vrx, vry = rel_velocity(x0[0], x0[1], x0[2], x0[3])
+        return float(np.arctan2(vrx * x0[0] + vry * x0[1], vrx * (-x0[1]) + vry * x0[0]))
+
+    # -- 二级段积分 ----------------------------------------------------------
+    def stage2_end(self, x0, t2, phi0, phi_nodes, sigma_nodes, t_shut):
+        rk = self.rk
+        n_phi, n_sig = self.n_phi, self.n_sigma
+        tau_phi = np.linspace(0.0, 1.0, n_phi)
+        tau_sig = np.linspace(0.0, 1.0, n_sig)
+        phi_abs = np.concatenate(([phi0 / DEG], phi_nodes))       # 长度 n_phi
+        sig_arr = np.asarray(sigma_nodes, float)                   # 长度 n_sig
+
+        def interp(tau, tau_nodes, vals):
+            return float(np.interp(tau, tau_nodes, vals))
+
+        def rhs(t, x):
+            tau = (t - t2) / (t_shut - t2)
+            p = interp(tau, tau_phi, phi_abs) * DEG
+            sig = float(np.clip(interp(tau, tau_sig, sig_arr), SIGMA_MIN, 1.0))
+            tx_h, ty_h = thrust_unit(p, x[0], x[1])
+            T = sig * rk.Fmax2
+            r = np.hypot(x[0], x[1])
+            ax = -MU / r**3 * x[0] + T / x[4] * tx_h
+            ay = -MU / r**3 * x[1] + T / x[4] * ty_h
+            mdot = -T / (rk.Isp2 * 9.80665)
+            return np.array([x[2], x[3], ax, ay, mdot])
+
+        sol = solve_ivp(rhs, (t2, max(t_shut, t2 + 1e-3)), x0, method="DOP853",
+                        rtol=self.rtol, atol=[1e-2, 1e-2, 1e-4, 1e-4, 1e-2])
+        return sol.y[:, -1]
+
+    # -- 目标 + 约束 --------------------------------------------------------
+    def evaluate(self, z: np.ndarray):
+        """z = [t_coast, phi_1..phi_{n_phi-1}, sigma_1..sigma_{n_sigma}, t_shut]"""
+        t_coast = z[0]
+        phi_nodes = z[1:1 + (self.n_phi - 1)]
+        sigma_nodes = z[1 + (self.n_phi - 1): 1 + (self.n_phi - 1) + self.n_sigma]
+        t_shut = z[-1]
+        x0, t2 = self.ignition_state(t_coast)
+        phi0 = self.phi0_of(x0)
+        if t_shut < t2 + 1.0 or t_shut > t2 + self.rk.t_burn2:
+            return 1e6 + abs(t_shut - t2), np.array([1.0, 1.0, 1.0])
+        xf = self.stage2_end(x0, t2, phi0, phi_nodes, sigma_nodes, t_shut)
+        prop_used = x0[4] - xf[4]
+        res = orbit_residual(xf, self.rk)
+        return prop_used, res
+
+    def objective(self, z: np.ndarray) -> float:
+        prop_used, res = self.evaluate(z)
+        penalty = 1e3 * float(np.sum(res**2))
+        return prop_used + penalty
+
+    def constraint_eq(self, z: np.ndarray) -> np.ndarray:
+        _, res = self.evaluate(z)
+        return res
+
+    def _solve_one(self, z0: np.ndarray, maxiter: int, bounds) -> tuple | None:
+        cons = {"type": "eq", "fun": lambda z: self.constraint_eq(z) * 1e2}
+        opt = minimize(
+            self.objective, z0, method="SLSQP", bounds=bounds,
+            constraints=[cons],
+            options={"ftol": 1e-8, "maxiter": maxiter, "disp": False},
+        )
+        prop_used, res = self.evaluate(opt.x)
+        if np.linalg.norm(res) < 1e-5:
+            return opt.x, prop_used, float(np.linalg.norm(res))
+        return None
+
+    def solve(self, starts: list[np.ndarray], maxiter: int = 80, workers: int = 8):
+        from concurrent.futures import ProcessPoolExecutor
+        n_phi, n_sig = self.n_phi, self.n_sigma
+        bounds = [(0.0, 400.0)] + [(-90.0, 90.0)] * (n_phi - 1) \
+                 + [(SIGMA_MIN, 1.0)] * n_sig + [(0.0, 1e3)]
+        results = []
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(self._solve_one, z0, maxiter, bounds) for z0 in starts]
+            for fut in futures:
+                r = fut.result()
+                if r is not None:
+                    results.append(r)
+        results.sort(key=lambda r: r[1])
+        return results
+
+
+def make_starts_q4(rk, n_phi, n_sigma) -> list[np.ndarray]:
+    """初值：Q3 最优解（全推力）+ 节流 0.6/0.8 + 多滑行时间组合。"""
+    s = Simulator(rk)
+    starts = []
+    opt0 = ThrottleOptimizer(rk, n_phi, n_sigma)
+    # 1) 从 Q3 解构造（若存在）：t_c=90, 线性俯仰律, sigma=1
+    try:
+        q3 = pd.read_csv(RES_DIR / "q3_summary.csv").iloc[0]
+        tc_q3 = float(q3["t_coast_s"])
+        ts_q3 = float(q3["t_shut_s"])
+        phi0_q3 = float(q3["phi0_deg"])
+        phi_nodes_q3 = [float(v) for v in str(q3["phi_nodes_deg"]).split(" | ")]
+        for sig_level in [0.6, 0.8, 0.9, 1.0]:
+            z = np.zeros(1 + (n_phi - 1) + n_sigma + 1)
+            z[0] = tc_q3
+            z[1:1 + (n_phi - 1)] = phi_nodes_q3[:n_phi - 1]
+            z[1 + (n_phi - 1): 1 + (n_phi - 1) + n_sigma] = sig_level
+            z[-1] = ts_q3 * (0.95 if sig_level < 1.0 else 1.0)
+            starts.append(z)
+    except Exception:
+        pass
+    # 2) 广泛网格
+    for tc in [30.0, 60.0, 90.0, 113.0, 150.0, 200.0, 260.0]:
+        res = s.simulate(t_coast=tc, controller=None, t_shut=rk.t_burn1 + tc + 1e-6)
+        x0 = res.stages[-1].x[0]
+        phi0 = opt0.phi0_of(x0)
+        t2 = float(res.stages[-1].t[0])
+        for sig_level in [0.6, 0.8, 1.0]:
+            for k0 in [-0.2, -0.1, -0.05, 0.0]:
+                z = np.zeros(1 + (n_phi - 1) + n_sigma + 1)
+                z[0] = tc
+                phi_land = 4.0
+                for j in range(n_phi - 1):
+                    tau = (j + 1) / n_phi
+                    z[1 + j] = phi0 / DEG + (phi_land - phi0 / DEG) * tau
+                for j in range(n_sigma):
+                    z[1 + (n_phi - 1) + j] = sig_level
+                z[-1] = t2 + 0.85 * rk.t_burn2
+                starts.append(z)
+    return starts
+
+
+def main() -> None:
+    rk = RocketParams()
+    opt = ThrottleOptimizer(rk)
+    print("=" * 72)
+    print("问题 4：推力节流（60%~100%）下二子级燃料最省")
+    print(f"控制：俯仰角 {opt.n_phi} 节点分段线性 + 节流比 {opt.n_sigma} 节点分段线性")
+    print("=" * 72)
+
+    starts = make_starts_q4(rk, opt.n_phi, opt.n_sigma)
+    print(f"初值数量：{len(starts)}")
+    results = opt.solve(starts)
+    print(f"收敛解数量：{len(results)}")
+    if not results:
+        print("未找到满足入轨条件的解！")
+        return
+
+    z_best, prop_used, nres = results[0]
+    prop_used, res = opt.evaluate(np.array(z_best, float))
+    z_best = np.array(z_best)
+    t_coast = z_best[0]
+    phi_nodes = z_best[1:1 + (opt.n_phi - 1)]
+    sigma_nodes = z_best[1 + (opt.n_phi - 1): 1 + (opt.n_phi - 1) + opt.n_sigma]
+    t_shut = z_best[-1]
+    x0, t2 = opt.ignition_state(t_coast)
+    phi0 = opt.phi0_of(x0)
+
+    print("-" * 72)
+    print("最优解：")
+    print(f"  滑行时间    t_c     = {t_coast:.4f} s")
+    print(f"  关机时刻    t_shut  = {t_shut:.4f} s（点火 t2 = {t2:.4f} s，"
+          f"燃尽上限 {t2 + rk.t_burn2:.4f} s）")
+    print(f"  俯仰角节点（deg）: ", end="")
+    tau_phi = np.linspace(0.0, 1.0, opt.n_phi)
+    for k, v in zip(tau_phi, np.concatenate(([phi0 / DEG], phi_nodes))):
+        print(f" [{k:.2f}]:{v:.3f}", end="")
+    print()
+    print(f"  节流比节点: ", end="")
+    tau_sig = np.linspace(0.0, 1.0, opt.n_sigma)
+    for k, v in zip(tau_sig, sigma_nodes):
+        print(f" [{k:.2f}]:{v:.3f}", end="")
+    print()
+    print(f"  消耗推进剂  = {prop_used:.1f} kg")
+    print(f"  关机质量    = {x0[4] - prop_used:.1f} kg（剩余推进剂 "
+          f"{x0[4] - prop_used - rk.ms2 - rk.m_payload:.1f} kg）")
+    print(f"  入轨残差    = {nres:.2e}")
+
+    # 与 Q3 对比
+    try:
+        q3 = pd.read_csv(RES_DIR / "q3_summary.csv").iloc[0]
+        print("-" * 72)
+        print(f"对比问题 3（无节流，全推力）：消耗推进剂 {q3['propellant_used_kg']:.1f} kg")
+        print(f"            本问节省 {q3['propellant_used_kg'] - prop_used:.1f} kg")
+    except Exception:
+        print("（Q3 结果未找到，跳过对比）")
+
+    # ---- 完整仿真验证 ----
+    def controller(t):
+        tau = (t - t2) / (t_shut - t2)
+        phi_abs = np.concatenate(([phi0 / DEG], phi_nodes))
+        return float(np.interp(tau, tau_phi, phi_abs) * DEG)
+
+    def sigma_fn(t):
+        tau = (t - t2) / (t_shut - t2)
+        return float(np.clip(np.interp(tau, tau_sig, sigma_nodes), SIGMA_MIN, 1.0))
+
+    sim = Simulator(rk)
+    res = sim.simulate(t_coast=t_coast, controller=controller,
+                       sigma=sigma_fn, t_shut=t_shut)
+    fs_ = res.final_state()
+    print("-" * 72)
+    print("完整仿真验证：")
+    print(f"  h = {fs_['h_km']:.4f} km, V = {fs_['v_in_mps']:.3f} m/s, "
+          f"gamma = {fs_['gamma_deg']:.5f} deg")
+    print(f"  入轨残差 = {orbit_residual(res.x[-1], rk)}")
+
+    # ---- 保存 ----
+    pd.DataFrame([{
+        "t_coast_s": t_coast, "t_shut_s": t_shut,
+        "phi_nodes_deg": " | ".join(f"{v:.4f}" for v in phi_nodes),
+        "sigma_nodes": " | ".join(f"{v:.4f}" for v in sigma_nodes),
+        "phi0_deg": phi0 / DEG,
+        "propellant_used_kg": prop_used,
+        "m_final_kg": fs_["m_kg"],
+        "propellant_remaining_kg": fs_["m_kg"] - rk.ms2 - rk.m_payload,
+        "residual_norm": nres,
+    }]).to_csv(RES_DIR / "q4_summary.csv", index=False)
+    df = pd.DataFrame({
+        "t_s": res.t, "h_km": res.h / 1e3, "V_mps": res.v_in,
+        "gamma_deg": res.gamma / DEG, "m_kg": res.m,
+        "phi_deg": res.phi / DEG, "sigma": res.sigma, "phase": res.phase,
+    })
+    df.to_csv(RES_DIR / "q4_trajectory.csv", index=False)
+
+    # ---- 绘图 ----
+    fig, axes = plt.subplots(2, 3, figsize=(14, 8))
+    ax = axes[0, 0]
+    ax.plot(res.t / 60, res.h / 1e3, lw=1.6)
+    ax.axhline(400, ls="--", color="gray")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("h (km)")
+    ax.set_title("高度"); ax.grid(alpha=0.4)
+    ax = axes[0, 1]
+    ax.plot(res.t / 60, res.v_in / 1e3, lw=1.6, color="tab:red")
+    ax.axhline(rk.v_circular / 1e3, ls="--", color="gray")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("V (km/s)")
+    ax.set_title("惯性速度"); ax.grid(alpha=0.4)
+    ax = axes[0, 2]
+    ax.plot(res.t / 60, res.gamma / DEG, lw=1.6, color="tab:green")
+    ax.axhline(0, ls="--", color="gray")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("gamma (deg)")
+    ax.set_title("飞行路径角"); ax.grid(alpha=0.4)
+    ax = axes[1, 0]
+    mask = res.t >= t2
+    ax.plot(res.t[mask] / 60, res.phi[mask] / DEG, lw=1.6, color="tab:purple")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("俯仰角 phi (deg)")
+    ax.set_title("二子级俯仰角控制律"); ax.grid(alpha=0.4)
+    ax = axes[1, 1]
+    ax.plot(res.t[mask] / 60, res.sigma[mask], lw=1.6, color="tab:orange")
+    ax.axhline(0.6, ls="--", color="gray", label="0.6 下限")
+    ax.axhline(1.0, ls="--", color="gray", label="1.0 上限")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("节流比 sigma")
+    ax.set_title("节流比控制律"); ax.legend(fontsize=8); ax.grid(alpha=0.4)
+    ax = axes[1, 2]
+    ax.plot(res.t[mask] / 60, res.m[mask] / 1e3, lw=1.6, color="tab:brown")
+    ax.set_xlabel("t (min)"); ax.set_ylabel("m (t)")
+    ax.set_title("二子级质量"); ax.grid(alpha=0.4)
+    fig.suptitle("问题 4：推力节流下燃料最省最优解", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(FIG_DIR / "q4_throttle_optimal.png", dpi=150)
+    plt.close(fig)
+    print(f"已保存：{RES_DIR / 'q4_summary.csv'}, {RES_DIR / 'q4_trajectory.csv'}, "
+          f"{FIG_DIR / 'q4_throttle_optimal.png'}")
+
+
+if __name__ == "__main__":
+    main()
+
+\end{lstlisting}

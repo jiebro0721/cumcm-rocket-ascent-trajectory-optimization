@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500" viewBox="0 0 900 500">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <rect width="900" height="500" fill="white"/>
+  <text x="450" y="36" text-anchor="middle" font-family="SimSun" font-size="20" font-weight="bold" fill="#111">问题 4 求解框架：推力节流下的燃料最优控制</text>
+
+  <!-- 左侧：优化问题表述 -->
+  <g transform="translate(40 80)">
+    <rect x="0" y="0" width="390" height="360" fill="#f7f9fc" stroke="#ccc" stroke-width="1"/>
+    <text x="195" y="28" text-anchor="middle" font-family="SimHei" font-size="15" fill="#111">优化问题</text>
+    <line x1="20" y1="45" x2="370" y2="45" stroke="#999" stroke-width="0.8"/>
+    <text x="22" y="78" font-family="SimSun" font-size="14" fill="#333">min  J = m(t₂⁺) − m(t₃)</text>
+    <text x="40" y="102" font-family="SimHei" font-size="12" fill="#666">（二子级消耗推进剂）</text>
+    <text x="22" y="135" font-family="SimSun" font-size="14" fill="#333">s.t.  |r| = R_E + H，|v| = √(μ/r)，r·v = 0</text>
+    <text x="22" y="168" font-family="SimSun" font-size="14" fill="#333">     σ(t) ∈ [0.6, 1.0]（节流比）</text>
+    <text x="22" y="200" font-family="SimSun" font-size="14" fill="#333">     φ₁ = φ₀（初始俯仰角）</text>
+    <text x="22" y="245" font-family="SimHei" font-size="13" fill="#1F4E79">决策变量：</text>
+    <text x="40" y="272" font-family="SimSun" font-size="13" fill="#333">t_c（滑行时间）</text>
+    <text x="40" y="296" font-family="SimSun" font-size="13" fill="#333">φ 节点（5 个分段线性）</text>
+    <text x="40" y="320" font-family="SimSun" font-size="13" fill="#333">σ 节点（4 个分段线性）</text>
+    <text x="40" y="344" font-family="SimSun" font-size="13" fill="#333">t₃（关机时刻，自由）</text>
+  </g>
+
+  <!-- 右侧：求解流程 -->
+  <g transform="translate(470 80)">
+    <rect x="0" y="0" width="390" height="360" fill="#fdf7f7" stroke="#ccc" stroke-width="1"/>
+    <text x="195" y="28" text-anchor="middle" font-family="SimHei" font-size="15" fill="#b23c3c">求解流程（控制参数化 + SLSQP）</text>
+    <line x1="20" y1="45" x2="370" y2="45" stroke="#999" stroke-width="0.8"/>
+    <!-- 流程框 -->
+    <rect x="40" y="62" width="310" height="40" rx="6" fill="white" stroke="#1F4E79" stroke-width="1.4"/>
+    <text x="195" y="87" text-anchor="middle" font-family="SimHei" font-size="13" fill="#111">① 点火前轨迹缓存（按 t_c）</text>
+    <line x1="195" y1="102" x2="195" y2="118" stroke="#333" stroke-width="1.2" marker-end="url(#arrow)"/>
+    <rect x="40" y="118" width="310" height="40" rx="6" fill="white" stroke="#1F4E79" stroke-width="1.4"/>
+    <text x="195" y="143" text-anchor="middle" font-family="SimHei" font-size="13" fill="#111">② DOP853 积分二级段</text>
+    <line x1="195" y1="158" x2="195" y2="174" stroke="#333" stroke-width="1.2" marker-end="url(#arrow)"/>
+    <rect x="40" y="174" width="310" height="40" rx="6" fill="white" stroke="#1F4E79" stroke-width="1.4"/>
+    <text x="195" y="199" text-anchor="middle" font-family="SimHei" font-size="13" fill="#111">③ 计算目标（推进剂）与入轨残差</text>
+    <line x1="195" y1="214" x2="195" y2="230" stroke="#333" stroke-width="1.2" marker-end="url(#arrow)"/>
+    <rect x="40" y="230" width="310" height="40" rx="6" fill="white" stroke="#b23c3c" stroke-width="1.4"/>
+    <text x="195" y="255" text-anchor="middle" font-family="SimHei" font-size="13" fill="#111">④ SLSQP（等式约束=入轨残差）</text>
+    <line x1="195" y1="270" x2="195" y2="286" stroke="#333" stroke-width="1.2" marker-end="url(#arrow)"/>
+    <rect x="40" y="286" width="310" height="40" rx="6" fill="white" stroke="#b23c3c" stroke-width="1.4"/>
+    <text x="195" y="311" text-anchor="middle" font-family="SimHei" font-size="13" fill="#111">⑤ 88 组初值并行（16 进程）</text>
+    <line x1="195" y1="326" x2="195" y2="340" stroke="#333" stroke-width="1.2" marker-end="url(#arrow)"/>
+    <text x="195" y="355" text-anchor="middle" font-family="SimHei" font-size="12" fill="#666">完整 Simulator 复验（残差 &lt; 1e-5 才接受）</text>
+  </g>
+
+  <!-- 底部结论框 -->
+  <g transform="translate(160 450)">
+    <rect x="0" y="0" width="580" height="40" rx="8" fill="#f0f4fa" stroke="#1F4E79" stroke-width="1.4"/>
+    <text x="290" y="25" text-anchor="middle" font-family="SimHei" font-size="14" fill="#1F4E79">结论：最优节流律 σ ≡ 1.0（满推力），节流无增益 —— 无路径约束所致</text>
+  </g>
+</svg>
