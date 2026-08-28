@@ -64,13 +64,30 @@ def plot_profiles(result, question, t2, t3, fname, prop_used):
 
 
 def plot_controls(result, question, t2, t3, phi_deg, sigma, fname):
-    """φ(t) 与 σ(t) 控制律曲线。"""
+    """Q3：仅俯仰角控制律（σ 恒为满推力，非优化量，不画）；
+    Q4：俯仰角 + 节流比。"""
     tau_nodes = np.linspace(0, 1, len(phi_deg))
     t_burn = np.linspace(t2, t3, 300)
     tau = (t_burn - t2) / (t3 - t2)
     phi_curve = np.interp(tau, tau_nodes, phi_deg)
-    sig_curve = np.interp(tau, tau_nodes, sigma)
 
+    if question == 3:
+        fig, ax = plt.subplots(figsize=(7.5, 4))
+        ax.plot(t_burn / 60, phi_curve, lw=2.2, color="#1F4E79")
+        ax.set_xlabel("时间 t / min", fontsize=12)
+        ax.set_ylabel("俯仰角 φ / deg", fontsize=12)
+        ax.grid(alpha=0.3)
+        ax.set_title("a 二子级俯仰角控制律", fontsize=13)
+        ax.annotate("极小值 1.75°", xy=(7.5, 1.75), xytext=(5.5, 3.2),
+                    fontsize=10, color="#1F4E79",
+                    arrowprops=dict(arrowstyle="->", color="#1F4E79", lw=1))
+        fig.tight_layout()
+        fig.savefig(OUT + "/" + fname, dpi=150)
+        plt.close(fig)
+        print("已生成", fname)
+        return
+
+    sig_curve = np.interp(tau, tau_nodes, sigma)
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     axes[0].plot(t_burn / 60, phi_curve, lw=2.0, color="#1F4E79")
     axes[0].set_xlabel("时间 t / min", fontsize=11)
