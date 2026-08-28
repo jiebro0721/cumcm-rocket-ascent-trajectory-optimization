@@ -50,7 +50,8 @@ class InscriptionSolver:
 
     # -- 点火前状态缓存（只与 t_coast 有关）-------------------------------
     def ignition_state(self, t_coast: float) -> tuple[np.ndarray, float]:
-        key = round(t_coast, 6)
+        # 连续优化变量不能取整作为缓存键，否则有限差分扰动会被抹掉。
+        key = float(t_coast)
         if key not in self._ign_cache:
             sim = Simulator(self.rk)
             res = sim.simulate(

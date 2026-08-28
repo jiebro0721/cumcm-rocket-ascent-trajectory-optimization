@@ -12,12 +12,13 @@
 │   ├── common.py           # 物理常数、火箭参数、动力学方程、分段积分器、入轨残差
 │   ├── q1_baseline.py      # 问题1：基准控制策略全程仿真
 │   ├── q2_inscription.py   # 问题2：入轨条件三维打靶（fsolve + 196 组多初值）
-│   ├── q3_fuel_opt.py      # 问题3：燃料最省（控制参数化 + SLSQP + 45 初值并行）
-│   └── q4_throttle_opt.py  # 问题4：推力节流下燃料最省（88 初值并行）
+│   ├── q3_fuel_opt.py      # 问题3：旧版单重打靶基线（用于方法对比）
+│   ├── q4_throttle_opt.py  # 问题4：旧版单重打靶基线（已修正节流容量约束）
+│   └── q34_direct_collocation.py # 问题3/4：Hermite-Simpson直接配点 + Ipopt
 ├── 论文/                   # 参赛论文（LaTeX，cumcmthesis 模板）
 │   ├── main.tex            # 论文正文（四问模型、算法、结果、评价）
-│   ├── appendix_codes.tex  # 附录：完整源代码（自动生成，与 src/ 一致）
-│   └── main.pdf            # 编译产物（正文 + 附录完整代码）
+│   ├── appendix_codes.tex  # 旧版代码附录（当前正文不再嵌入）
+│   └── main.pdf            # 最近一次本地编译产物
 ├── figures/                # 论文插图（PNG，由 src/ 生成）
 ├── figures_src/            # 示意图源（SVG 矢量 + 生成脚本）
 ├── results/                # 数值结果（CSV）
@@ -28,7 +29,7 @@
 ## 运行环境与依赖
 
 - Python ≥ 3.10
-- `pip install -r requirements.txt`（numpy、pandas、scipy、matplotlib）
+- `pip install -r requirements.txt`（numpy、pandas、scipy、matplotlib、casadi）
 - 论文编译：XeLaTeX（MiKTeX/TeXLive），`xelatex main.tex` 两遍
 
 ## 复现步骤
@@ -37,8 +38,8 @@
 # 1. 依次运行四问求解器
 python src/q1_baseline.py      # 问题1：基准策略仿真
 python src/q2_inscription.py   # 问题2：入轨条件打靶
-python src/q3_fuel_opt.py      # 问题3：燃料最省优化
-python src/q4_throttle_opt.py  # 问题4：推力节流优化
+python src/q34_direct_collocation.py --question 3 --n-coast 20 --n-burn 40
+python src/q34_direct_collocation.py --question 4 --n-coast 20 --n-burn 40
 
 # 2. 结果输出
 #    results/q{1,2,3,4}_*.csv  数值结果
@@ -57,27 +58,27 @@ cd 论文 && xelatex main.tex && xelatex main.tex
 - 重力 `−μr/r³`、推力 `(T/m)·û`（俯仰角控制）、阻力用相对速度 `D = −½ρSC_D|v_rel|v_rel`
 - 指数大气 `ρ(h) = 1.225·e^(−h/7200)`
 - 飞行剖面：垂直起飞 10 s → 程序转弯 0.4°/s → 一子级分离 → 无动力滑行 → 二子级点火入轨
-- 入轨条件：`|r| = R_E+400 km`，`|v| = √(μ/|r|)`，`r·v = 0`
+- 顺行入轨条件：`|r| = R_E+400 km`，`v_r = 0`，`v_t = +√(μ/|r|)`
 
 **求解算法**：
 
 | 问题 | 方法 |
 | :--- | :--- |
 | 问题1 | 分段 DOP853 自适应积分 + 事件检测（推进剂耗尽） |
-| 问题2 | 三维打靶：Newton 型 fsolve + 196 组网格多初值 |
-| 问题3 | 控制参数化（分段线性俯仰角）+ SLSQP + 45 组初值并行 |
-| 问题4 | 控制参数化（俯仰角 + 节流比）+ SLSQP + 88 组初值并行 |
+| 问题2 | 三维非线性打靶；完整动力学重积分复验 |
+| 问题3 | Hermite-Simpson 直接配点 + 自动微分 + Ipopt；DOP853 独立复验 |
+| 问题4 | 与问题3共用配点模型，增加节流变量和累计推进剂约束 |
 
-所有最优解均用完整 Simulator 端到端复验，入轨残差 < 10⁻⁵ 才接受。
+问题3/4使用问题2轨迹暖启动和网格加密，不再依赖几十组盲目初值。所得候选解均用完整 `Simulator` 端到端复验；非凸问题只声明局部最优，不作全局保证。
 
 ## 主要结果
 
 | 问题 | 结果 |
 | :--- | :--- |
-| 问题1 | 二子级燃尽：h = 433.53 km、V = 8521.18 m/s、γ = −0.69°（过冲未入轨） |
+| 问题1 | 二子级燃尽：h = 433.53 km、V = 8521.18 m/s、γ = −0.69°（进入椭圆轨道而非目标圆轨道） |
 | 问题2 | t_c = 103.63 s、k = −0.0474°/s、t_shut = 650.74 s，剩余推进剂 4015 kg |
-| 问题3 | t_c = 103.63 s、t_shut = 650.74 s，消耗 57984.8 kg（比 Q2 微省） |
-| 问题4 | 最优节流律 σ ≡ 1.0（满推力）→ 无路径约束时节流无增益 |
+| 问题3 | 20/40网格：t_c = 4.3767 s、燃烧 394.3534 s，消耗 57446.934 kg |
+| 问题4 | 20/40网格：σ ≈ 1，消耗 57446.935 kg；当前模型下未发现节流收益 |
 
 ## 参考文献
 

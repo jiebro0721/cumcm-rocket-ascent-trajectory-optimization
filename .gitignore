@@ -34,3 +34,4 @@ figures_src/_conv5.py
 figures_src/_sigma.py
 figures_src/_update_tex.py
 论文/_chk_*.png
+figures_src/_de_experiment*.py

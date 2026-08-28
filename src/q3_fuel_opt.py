@@ -50,7 +50,8 @@ class FuelOptimizer:
         self._ign_cache: dict[float, tuple[np.ndarray, float]] = {}
 
     def ignition_state(self, t_coast: float) -> tuple[np.ndarray, float]:
-        key = round(t_coast, 6)
+        # 保留优化器施加的微小扰动，使滑行时间方向的数值导数可见。
+        key = float(t_coast)
         if key not in self._ign_cache:
             sim = Simulator(self.rk)
             res = sim.simulate(

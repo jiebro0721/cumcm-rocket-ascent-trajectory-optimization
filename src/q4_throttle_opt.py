@@ -53,7 +53,8 @@ class ThrottleOptimizer:
         self._ign_cache: dict[float, tuple[np.ndarray, float]] = {}
 
     def ignition_state(self, t_coast: float) -> tuple[np.ndarray, float]:
-        key = round(t_coast, 6)
+        # 保留优化器施加的微小扰动，使滑行时间方向的数值导数可见。
+        key = float(t_coast)
         if key not in self._ign_cache:
             sim = Simulator(self.rk)
             res = sim.simulate(
@@ -108,10 +109,14 @@ class ThrottleOptimizer:
         t_shut = z[-1]
         x0, t2 = self.ignition_state(t_coast)
         phi0 = self.phi0_of(x0)
-        if t_shut < t2 + 1.0 or t_shut > t2 + self.rk.t_burn2:
+        # 节流时允许比满推力燃烧更久；真正的容量约束是累计耗药量。
+        max_duration = self.rk.t_burn2 / SIGMA_MIN
+        if t_shut < t2 + 1.0 or t_shut > t2 + max_duration:
             return 1e6 + abs(t_shut - t2), np.array([1.0, 1.0, 1.0])
         xf = self.stage2_end(x0, t2, phi0, phi_nodes, sigma_nodes, t_shut)
         prop_used = x0[4] - xf[4]
+        if prop_used > self.rk.mp2 + 1e-6:
+            return 1e6 + (prop_used - self.rk.mp2), np.array([1.0, 1.0, 1.0])
         res = orbit_residual(xf, self.rk)
         return prop_used, res
 

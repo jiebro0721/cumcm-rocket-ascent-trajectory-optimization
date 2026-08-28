@@ -322,9 +322,10 @@ class Simulator:
         """按六段剖面仿真。
 
         controller(t) -> phi [rad]：二级动力段俯仰角程序；None 表示攻角为零
-        （推力方向与相对速度方向一致）。
+        （真空二级段推力方向与惯性速度方向一致）。
         sigma: 二级节流比（常数或函数 t->sigma，默认 1.0）。
-        t_shut: 二级关机时刻（绝对时间）。None 或超出燃尽时间则推进剂耗尽关机。
+        t_shut: 二级关机时刻（绝对时间）。None 表示按满推力燃尽时间关机；
+        若给定更晚时刻，则由干质量事件限制累计推进剂消耗。
         返回 SimResult（全阶段拼接）。
         """
         rk = self.rk
@@ -369,7 +370,6 @@ class Simulator:
         sigma_fn = sigma if callable(sigma) else (lambda t: float(sigma))
         if t_shut is None:
             t_shut = t2 + rk.t_burn2   # 燃尽
-        t_shut = min(t_shut, t2 + rk.t_burn2)
 
         def mass_flow(t):
             return -sigma_fn(t) * rk.Fmax2 / (rk.Isp2 * G0)
