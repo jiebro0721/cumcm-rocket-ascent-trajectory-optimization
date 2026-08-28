@@ -30,3 +30,6 @@ figures_src/_sensitivity.py
 # 系统文件
 .DS_Store
 Thumbs.db
+figures_src/_conv5.py
+figures_src/_sigma.py
+figures_src/_update_tex.py
