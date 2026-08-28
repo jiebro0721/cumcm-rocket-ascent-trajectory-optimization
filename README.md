@@ -22,7 +22,6 @@
 ├── figures_src/            # 示意图源（SVG 矢量 + 生成脚本）
 ├── results/                # 数值结果（CSV）
 ├── 文献/                   # 参考文献（中外期刊论文 + 开源求解器代码）
-├── 项目审阅报告.md          # 第三方审阅报告及整改记录
 └── requirements.txt        # Python 依赖
 ```
 
