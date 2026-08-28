@@ -9,7 +9,7 @@
 入轨条件（惯性系，3 个等式）：
     |r| = R_E + H,  |v| = sqrt(mu/|r|),  r·v = 0
 
-未知量 (t_coast, k, t_shut) 共 3 个、方程 3 个 -> 三维打靶（fsolve 多初值）。
+未知量 (t_coast, k, t_b) 共 3 个、方程 3 个 -> 有界三维打靶（least_squares 多初值）。
 点火前轨迹只与 t_coast 有关，缓存之；二级段单独快速积分。
 """
 
@@ -22,7 +22,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
-from scipy.optimize import fsolve
 
 from common import (
     DEG,
@@ -86,40 +85,43 @@ class InscriptionSolver:
         )
         return sol.y[:, -1]
 
-    # -- 残差 --------------------------------------------------------------
+    # -- 残差（参数化 [t_c, k, t_b]，与论文一致）-----------------------------
     def residual(self, z: np.ndarray) -> np.ndarray:
-        t_coast, k_deg_s, t_shut = z
+        t_coast, k_deg_s, t_b = z
         x0, t2 = self.ignition_state(t_coast)
         phi0 = np.arctan2(x0[2] * x0[0] + x0[3] * x0[1],
                           x0[2] * (-x0[1]) + x0[3] * x0[0])
-        if t_shut > t2 + self.rk.t_burn2:   # 超出燃尽上限 -> 罚
+        t_shut = t2 + t_b
+        if t_b <= 0.0 or t_b > self.rk.t_burn2:   # 超出物理边界 -> 罚
             return np.array([1.0, 1.0, 0.0])
         xf = self.stage2_end(x0, t2, phi0, k_deg_s, t_shut)
         return orbit_residual(xf, self.rk)
 
-    # -- 多初值打靶 ---------------------------------------------------------
+    # -- 多初值打靶（有界 least_squares）------------------------------------
     def solve(self, starts=None) -> list[tuple[np.ndarray, float]]:
+        from scipy.optimize import least_squares
         if starts is None:
             starts = []
             for tc in [0.0, 30.0, 60.0, 90.0, 120.0, 150.0, 180.0]:
                 for k in [-0.4, -0.2, -0.1, -0.05, 0.0, 0.1, 0.2]:
-                    for ts in [350.0, 450.0, 550.0, 650.0]:
-                        starts.append((tc, k, ts))
+                    for tb in [200.0, 300.0, 400.0, 425.0]:   # 燃烧时间
+                        starts.append((tc, k, tb))
         sols = {}
         for z0 in starts:
-            # 可行域检查：燃尽上限保护
             x0, t2 = self.ignition_state(z0[0])
-            if z0[2] > t2 + self.rk.t_burn2:
+            if z0[2] <= 0.0 or z0[2] > self.rk.t_burn2:
                 continue
             try:
-                sol, info, ier, msg = fsolve(
-                    self.residual, np.array(z0, float), full_output=True, xtol=1e-11,
+                sol = least_squares(
+                    self.residual, np.array(z0, float),
+                    bounds=([0.0, -1.0, 1.0], [400.0, 1.0, self.rk.t_burn2 - 1e-6]),
+                    xtol=1e-12, ftol=1e-12, gtol=1e-12, max_nfev=500,
                 )
-                if ier == 1:
-                    n = float(np.linalg.norm(self.residual(sol)))
-                    key = (round(sol[0], 1), round(sol[1], 4))
+                if sol.cost < 1e-20:   # 残差平方和极小 -> 高精度可行根
+                    n = float(np.linalg.norm(self.residual(sol.x)))
+                    key = (round(sol.x[0], 1), round(sol.x[1], 4))
                     if key not in sols or n < sols[key][1]:
-                        sols[key] = (sol, n)
+                        sols[key] = (sol.x, n)
             except Exception:
                 pass
         return sorted(sols.values(), key=lambda kv: kv[1])
@@ -130,20 +132,21 @@ def main() -> None:
     solver = InscriptionSolver(rk)
 
     print("=" * 72)
-    print("问题 2：入轨打靶（网格多初值 + fsolve）")
+    print("问题 2：入轨打靶（网格多初值 + 有界 least_squares）")
     print("=" * 72)
     sols = solver.solve()
     print(f"找到 {len(sols)} 组收敛根（按残差排序）：")
     for i, (sol, n) in enumerate(sols[:6]):
         print(f"  #{i+1}: t_c={sol[0]:8.3f} s  k={sol[1]:8.4f} deg/s  "
-              f"t_shut={sol[2]:8.3f} s  |res|={n:.2e}")
+              f"t_b={sol[2]:8.3f} s  |res|={n:.2e}")
 
     if not sols:
         print("未找到可行解！")
         return
 
     sol, n = sols[0]
-    t_coast, k_deg_s, t_shut = sol
+    t_coast, k_deg_s, t_b = sol
+    t_shut = solver.ignition_state(t_coast)[1] + t_b
 
     # ---- 完整重仿验证（用 Simulator 的完整流程，含事件检测与燃尽保护）----
     x0, t2 = solver.ignition_state(t_coast)
@@ -162,6 +165,7 @@ def main() -> None:
     print("最终验证（入轨时刻状态）：")
     print(f"  滑行时间    t_c    = {t_coast:.3f} s")
     print(f"  俯仰角速率  k      = {k_deg_s:.4f} deg/s")
+    print(f"  燃烧时间    t_b    = {t_b:.3f} s")
     print(f"  初始俯仰角  phi0   = {phi0 / DEG:.4f} deg（与点火时刻速度方向一致）")
     print(f"  一子级关机  t1     = {res.t1:.3f} s；二子级点火 t2 = {t2:.3f} s")
     print(f"  关机时刻    t_shut = {t_shut:.3f} s（燃尽上限 {t2 + rk.t_burn2:.3f} s）")

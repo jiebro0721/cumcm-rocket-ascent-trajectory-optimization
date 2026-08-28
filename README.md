@@ -8,20 +8,20 @@
 
 ```
 .
-├── src/                    # 全部源代码
-│   ├── common.py           # 物理常数、火箭参数、动力学方程、分段积分器、入轨残差
+├── src/                    # 全部源代码（权威实现）
+│   ├── common.py           # 物理常数、火箭参数、动力学方程、分段积分器、顺行入轨残差
 │   ├── q1_baseline.py      # 问题1：基准控制策略全程仿真
-│   ├── q2_inscription.py   # 问题2：入轨条件三维打靶（fsolve + 196 组多初值）
-│   ├── q3_fuel_opt.py      # 问题3：旧版单重打靶基线（用于方法对比）
-│   ├── q4_throttle_opt.py  # 问题4：旧版单重打靶基线（已修正节流容量约束）
-│   └── q34_direct_collocation.py # 问题3/4：Hermite-Simpson直接配点 + Ipopt
+│   ├── q2_inscription.py   # 问题2：入轨条件有界三维打靶（least_squares + 196 组多初值）
+│   ├── q34_direct_collocation.py # 问题3/4：Hermite-Simpson直接配点 + CasADi/Ipopt
+│   └── run_all.py          # 一键复现：Q1→Q4→图表
+├── legacy/shooting_baseline/  # 旧版单重打靶求解器与结果（仅方法对比，非权威）
 ├── 论文/                   # 参赛论文（LaTeX，cumcmthesis 模板）
 │   ├── main.tex            # 论文正文（四问模型、算法、结果、评价）
-│   ├── appendix_codes.tex  # 旧版代码附录（当前正文不再嵌入）
-│   └── main.pdf            # 最近一次本地编译产物
+│   └── main.pdf            # 编译产物（24 页）
 ├── figures/                # 论文插图（PNG，由 src/ 生成）
 ├── figures_src/            # 示意图源（SVG 矢量 + 生成脚本）
-├── results/                # 数值结果（CSV）
+├── results/                # 权威数值结果（CSV：summary/trajectory/convergence）
+├── tests/                  # 回归测试（pytest，8 项）
 ├── 文献/                   # 参考文献（中外期刊论文 + 开源求解器代码）
 └── requirements.txt        # Python 依赖
 ```
@@ -32,22 +32,27 @@
 - `pip install -r requirements.txt`（numpy、pandas、scipy、matplotlib、casadi）
 - 论文编译：XeLaTeX（MiKTeX/TeXLive），`xelatex main.tex` 两遍
 
-## 复现步骤
+## 复现步骤（单一入口）
 
 ```bash
-# 1. 依次运行四问求解器
+# 一键复现论文全部数值结果与图表
+python src/run_all.py
+
+# 或分步执行
 python src/q1_baseline.py      # 问题1：基准策略仿真
-python src/q2_inscription.py   # 问题2：入轨条件打靶
-python src/q34_direct_collocation.py --question 3 --n-coast 20 --n-burn 40
-python src/q34_direct_collocation.py --question 4 --n-coast 20 --n-burn 40
+python src/q2_inscription.py   # 问题2：入轨条件有界打靶
+python src/q34_direct_collocation.py --question 3 --n-coast 10 --n-burn 20   # Q3 粗网格
+python src/q34_direct_collocation.py --question 3 --n-coast 20 --n-burn 40   # Q3 细网格
+python src/q34_direct_collocation.py --question 4 --n-coast 20 --n-burn 40   # Q4（两类初值内置）
 
-# 2. 结果输出
-#    results/q{1,2,3,4}_*.csv  数值结果
-#    figures/q*.png            插图
+# 运行回归测试
+python -m pytest
 
-# 3. 编译论文（在 论文/ 目录）
+# 编译论文（在 论文/ 目录）
 cd 论文 && xelatex main.tex && xelatex main.tex
 ```
+
+**结果链约定**：`results/` 是论文唯一数据源（Q1--Q4 的 summary 与控制节点以 17 位有效数字保存）；`legacy/` 中的旧版单重打靶结果仅供方法对比，不作为论文数字来源。
 
 ## 核心建模
 
@@ -58,25 +63,25 @@ cd 论文 && xelatex main.tex && xelatex main.tex
 - 重力 `−μr/r³`、推力 `(T/m)·û`（俯仰角控制）、阻力用相对速度 `D = −½ρSC_D|v_rel|v_rel`
 - 指数大气 `ρ(h) = 1.225·e^(−h/7200)`
 - 飞行剖面：垂直起飞 10 s → 程序转弯 0.4°/s → 一子级分离 → 无动力滑行 → 二子级点火入轨
-- 顺行入轨条件：`|r| = R_E+400 km`，`v_r = 0`，`v_t = +√(μ/|r|)`
+- 顺行入轨条件：`|r| = R_E+400 km`，`v_r = 0`，`v_t = +√(μ/|r|)`（残差以切向速度符号严格排除逆行分支）
 
 **求解算法**：
 
 | 问题 | 方法 |
 | :--- | :--- |
 | 问题1 | 分段 DOP853 自适应积分 + 事件检测（推进剂耗尽） |
-| 问题2 | 三维非线性打靶；完整动力学重积分复验 |
+| 问题2 | 有界三维打靶（`least_squares`，变量 [t_c, k, t_b]）+ 完整动力学重积分复验 |
 | 问题3 | Hermite-Simpson 直接配点 + 自动微分 + Ipopt；DOP853 独立复验 |
-| 问题4 | 与问题3共用配点模型，增加节流变量和累计推进剂约束 |
+| 问题4 | 与问题3共用配点模型，增加节流变量和累计推进会约束 |
 
-问题3/4使用问题2轨迹暖启动和网格加密，不再依赖几十组盲目初值。所得候选解均用完整 `Simulator` 端到端复验；非凸问题只声明局部最优，不作全局保证。
+问题3/4使用问题2轨迹暖启动和网格加密（10/20 → 20/40），不再依赖几十组盲目初值。所得候选解均用完整 `Simulator` 端到端复验；非凸问题只声明局部最优，不作全局保证。
 
 ## 主要结果
 
 | 问题 | 结果 |
 | :--- | :--- |
 | 问题1 | 二子级燃尽：h = 433.53 km、V = 8521.18 m/s、γ = −0.69°（进入椭圆轨道而非目标圆轨道） |
-| 问题2 | t_c = 103.63 s、k = −0.0474°/s、t_shut = 650.74 s，剩余推进剂 4015 kg |
+| 问题2 | t_c = 103.63 s、k = −0.0474°/s、t_b = 398.05 s（关机 650.74 s），剩余推进剂 4015 kg |
 | 问题3 | 20/40网格：t_c = 4.3767 s、燃烧 394.3534 s，消耗 57446.934 kg |
 | 问题4 | 20/40网格：σ ≈ 1，消耗 57446.935 kg；当前模型下未发现节流收益 |
 

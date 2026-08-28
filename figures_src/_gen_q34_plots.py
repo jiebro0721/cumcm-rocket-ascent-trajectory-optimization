@@ -1,14 +1,20 @@
-"""生成问题三/四的实际轨迹与控制律曲线（与问题一风格一致，用于论文）。"""
+"""生成问题三/四的实际轨迹与控制律曲线（与问题一风格一致，用于论文）。
+
+所有路径基于 __file__ 相对定位，可在任意目录运行。
+"""
 import sys
+from pathlib import Path
+
 import numpy as np
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, r"C:\Users\Hanamiya\Desktop\2026国赛\培训\机理2\src")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 
-OUT = r"C:\Users\Hanamiya\Desktop\2026国赛\培训\机理2\论文"
+OUT = str(ROOT / "论文")
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "Arial"]
 plt.rcParams["axes.unicode_minus"] = False
 

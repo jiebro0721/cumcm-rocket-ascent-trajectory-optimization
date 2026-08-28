@@ -304,6 +304,7 @@ class DirectCollocationSolver:
 
 
 def save_summary(solution: CollocationSolution, validation: dict):
+    # 控制节点以完整精度（17 位有效数字）保存，保证公开数据可精确复现独立重积分。
     row = {
         "question": solution.question,
         "n_coast": solution.n_coast,
@@ -317,8 +318,8 @@ def save_summary(solution: CollocationSolution, validation: dict):
         "radial_velocity_error_mps": validation["radial_velocity_error_mps"],
         "tangential_velocity_error_mps": validation["tangential_velocity_error_mps"],
         "residual_norm": validation["residual_norm"],
-        "phi_nodes_deg": " | ".join(f"{v:.6f}" for v in solution.phi_deg),
-        "sigma_nodes": " | ".join(f"{v:.6f}" for v in solution.sigma),
+        "phi_nodes_deg": " | ".join(f"{v:.17g}" for v in solution.phi_deg),
+        "sigma_nodes": " | ".join(f"{v:.17g}" for v in solution.sigma),
     }
     path = RES_DIR / f"q{solution.question}_collocation_summary.csv"
     pd.DataFrame([row]).to_csv(path, index=False)

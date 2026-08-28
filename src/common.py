@@ -438,21 +438,24 @@ class Simulator:
 # 入轨条件残差（问题 2~4 共用）
 # ---------------------------------------------------------------------------
 def orbit_residual(xf: np.ndarray, rk: RocketParams) -> np.ndarray:
-    """由关机时刻惯性状态计算入轨条件残差（无量纲，与论文式(24)一致）。
+    """由关机时刻惯性状态计算入轨条件残差（无量纲，顺行圆轨道）。
 
-    三个分量：半径偏差、速度偏差、径向速度偏差。
-    第三分量分子为 r·v，分母用目标半径 a 与目标圆轨道速度 sqrt(mu/a) 归一化。
+    三个分量依次为：半径偏差、径向速度偏差、切向速度偏差。
+    切向速度取顺行方向（局部东向），当 v_t<vc 时残差为负，
+    从而严格排除逆行圆轨道分支。
     xf = [x, y, vx, vy, m]（惯性）。
     """
     r = np.hypot(xf[0], xf[1])
-    v = np.hypot(xf[2], xf[3])
-    rv_dot = xf[0] * xf[2] + xf[1] * xf[3]
+    rx, ry = xf[0] / r, xf[1] / r          # 径向单位向量
+    tx, ty = -ry, rx                       # 东向（顺行）单位向量
+    vr = xf[2] * rx + xf[3] * ry
+    vt = xf[2] * tx + xf[3] * ty
     a = rk.a_target
     vc = rk.v_circular
     return np.array([
         (r - a) / R_E,
-        (v - vc) / vc,
-        rv_dot / (a * vc),
+        vr / vc,
+        (vt - vc) / vc,
     ])
 
 
