@@ -794,19 +794,20 @@ YAPSS Documentation. Delta III launch vehicle ascent problem[EB/OL]. \url{https:
 % 附录：支撑材料说明（按全国大学生数学建模竞赛论文格式规范第五条）
 \begin{appendices}
 \section{支撑材料文件列表}
-本论文的全部建模、求解与验证程序代码随支撑材料一并提交，文件列表如下：
+本论文的全部建模、求解与验证程序代码随支撑材料一并提交，完整源代码见附录 A--F，文件列表如下：
 \begin{itemize}
-  \item \texttt{src/common.py}：物理常数、火箭参数、动力学方程、分段积分器与入轨残差；
-  \item \texttt{src/q1\_baseline.py}：问题一基准控制策略全程仿真；
-  \item \texttt{src/q2\_inscription.py}：问题二入轨条件有界三维打靶；
-  \item \texttt{src/q34\_direct\_collocation.py}：问题三、四 Hermite--Simpson 直接配点求解器；
-  \item \texttt{src/run\_all.py}：一键复现脚本（依次执行 Q1--Q4 并生成论文图表）；
-  \item \texttt{legacy/shooting\_baseline/}：旧版单重打靶求解器与结果，用于方法对比；
-  \item \texttt{cross\_validation/}：独立实现（RK4 + scipy 配点）的交叉验证代码、结果与说明（三档网格收敛、多初值审计、节流灵敏度、损失预算）；
+  \item \texttt{src/common.py}：物理常数、火箭参数、动力学方程、分段积分器与入轨残差（附录 A）；
+  \item \texttt{src/q1\_baseline.py}：问题一基准控制策略全程仿真（附录 B）；
+  \item \texttt{src/q2\_inscription.py}：问题二入轨条件有界三维打靶（附录 C）；
+  \item \texttt{src/q34\_direct\_collocation.py}：问题三、四 Hermite--Simpson 直接配点求解器（附录 D）；
+  \item \texttt{src/run\_all.py}：一键复现脚本（附录 E）；
+  \item \texttt{cross\_validation/}：独立实现（RK4 + scipy 配点）的交叉验证代码（附录 F）、结果与说明（三档网格收敛、多初值审计、节流灵敏度、损失预算）；
   \item \texttt{tests/}：配点数学检查与模型约束回归测试（含顺行圆轨道分支测试）；
   \item \texttt{results/}：全部权威数值结果（含配点网格收敛与独立重积分复验数据）。
 \end{itemize}
 全部程序可通过 \texttt{python src/run\_all.py} 一键复现论文数值结果与图表。
+
+\input{appendix_codes}
 \end{appendices}
 
 \end{document}
