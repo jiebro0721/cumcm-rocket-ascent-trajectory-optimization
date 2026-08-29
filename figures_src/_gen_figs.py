@@ -29,15 +29,13 @@ def _set_default(ax):
 # 图 1：受力分析与三阶段控制
 # ===========================================================================
 def fig_forces_coords():
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14.0, 6.6),
-                                   gridspec_kw={"width_ratios": [1.05, 1.0]})
+    fig, ax1 = plt.subplots(figsize=(7.8, 7.0))
 
-    # ---- (a) 受力图（放大、精简文字）----
-    ax1.set_xlim(-2.30, 2.30)
-    ax1.set_ylim(-2.30, 2.30)
+    # 受力图（放大、仅符号——不含完整数学公式）
+    ax1.set_xlim(-2.35, 2.35)
+    ax1.set_ylim(-2.35, 2.35)
     ax1.set_aspect("equal")
     ax1.axis("off")
-    ax1.set_title("a  受力与局部坐标系", fontsize=FS_TITLE)
 
     earth = plt.Circle((0, 0), 0.80, fc="#e8edf3", ec="#7a8ea8", lw=1.4)
     ax1.add_patch(earth)
@@ -100,36 +98,6 @@ def fig_forces_coords():
              color="#b23c3c", lw=1.3)
     ax1.text(rx + 0.86 * np.cos(th + p * 0.5) - 0.08, ry + 0.86 * np.sin(th + p * 0.5) + 0.04,
              r"$\varphi$", fontsize=15, color="#b23c3c")
-
-    # ---- (b) 三阶段控制输入 ----
-    ax2.axis("off")
-    ax2.set_xlim(0, 1)
-    ax2.set_ylim(0, 1)
-    ax2.set_title("b  三个阶段的控制输入", fontsize=FS_TITLE)
-    boxes = [
-        ("阶段Ⅰ 垂直起飞与程序转弯", "#1F4E79",
-         [r"$T=F_{\max 1}$ 恒定",
-          r"$\varphi(t)=90^\circ-0.4^\circ/s\cdot(t-10\,\mathrm{s})$",
-          r"终止条件：一子级推进剂耗尽 $t_1$"]),
-        ("阶段Ⅱ 无动力滑行", "#8a6d3b",
-         [r"$T=0$，重力转向，无阻力",
-          r"终止条件：滑行时间 $t_c$ 到期"]),
-        ("阶段Ⅲ 二子级入轨修正", "#b23c3c",
-         [r"问题1：$\varphi=\gamma$，$T=F_{\max 2}$",
-          r"问题2：$\varphi=\varphi_0+k\cdot(t-t_2)$",
-          r"问题4：$T=\sigma(t)\,F_{\max 2}$，$\sigma\in[0.6,1]$"]),
-    ]
-    ypos = [0.885, 0.565, 0.18]
-    height = 0.25
-    for (title, color, lines), y in zip(boxes, ypos):
-        ax2.add_patch(plt.Rectangle((0.03, y - height), 0.94, height,
-                                    fc="#f7f9fc", ec="#ccc", lw=1.0))
-        ax2.text(0.5, y - 0.03, title, fontsize=FS_BOX + 2.5, ha="center",
-                 color=color, fontweight="bold")
-        ax2.plot([0.09, 0.91], [y - 0.085, y - 0.085], color=color, lw=1.8)
-        for i, line in enumerate(lines):
-            ax2.text(0.09, y - 0.145 - 0.062 * i, line, fontsize=FS_BOX + 1.5,
-                     va="center", color="#333")
 
     fig.savefig(OUT + r"\fig_forces_coords.pdf")
     plt.close(fig)
@@ -234,18 +202,18 @@ def fig_orbit_condition():
     ax.text(rx + 0.10, ry + 0.22, r"关机点 $t_3$", fontsize=FS_TEXT,
             color="#1F4E79", ha="left")
 
-    # 入轨条件（精简，仅核心 3 条）
+    # 入轨条件（纯文字描述——不含完整数学公式）
     ax.text(-2.02, 1.42, "入轨条件", fontsize=FS_TEXT + 2, color="#111",
             ha="left", fontweight="bold")
     items = [
-        r"$|r(t_3)|=R_E+H=6771$ km",
-        r"$|v(t_3)|=\sqrt{\mu/r}=7672.6$ m/s",
-        r"$r(t_3)\cdot v(t_3)=0$",
+        "轨心距等于目标轨道半径 6771 km",
+        "速度大小等于该半径处的圆轨道速度",
+        "速度方向沿当地切向，即径向速度为零",
     ]
     for i, it in enumerate(items):
         ax.text(-2.02, 1.14 - 0.26 * i, it, fontsize=FS_TEXT + 1,
                 color="#333", ha="left")
-    ax.text(-2.02, 0.16, r"（$v$ 在惯性系中度量，顺行）",
+    ax.text(-2.02, 0.16, "速度在惯性系中度量，取顺行方向",
             fontsize=FS_TEXT - 1, color="#666", ha="left")
 
     fig.savefig(OUT + r"\fig_orbit_condition.pdf")
