@@ -1,0 +1,289 @@
+{
+  "constants": {
+    "re": 6371000.0,
+    "mu": 398600441800000.0,
+    "omega": 7.2921159e-05,
+    "g0": 9.80665,
+    "rho0": 1.225,
+    "h0": 7200.0,
+    "cd": 0.3,
+    "area": 12.5,
+    "target_h": 400000.0,
+    "target_radius_m": 6771000.0,
+    "circular_speed_m_s": 7672.598648385013,
+    "tb1_s": 149.06108,
+    "tb2_max_s": 425.60860999999994
+  },
+  "methods": {
+    "forward_integration": "fixed-step classical RK4",
+    "q2": "Newton predictor-corrector with a finite-difference sensitivity matrix and line search",
+    "q3_q4": "Hermite-Simpson direct collocation followed by independent RK4 verification"
+  },
+  "Q1": {
+    "name": "Q1 baseline",
+    "coast_time_s": 60.0,
+    "burn_time_s": 425.60860999999994,
+    "stage2_prop_used_kg": 62000.0,
+    "terminal": {
+      "height_km": 433.5267756443974,
+      "inertial_speed_m_s": 8521.17934264838,
+      "ground_relative_speed_m_s": 8025.023128611001,
+      "radial_speed_m_s": -102.02299436376907,
+      "tangential_speed_m_s": 8520.568566603904,
+      "flight_path_deg": -0.6860114571460592,
+      "mass_kg": 17999.999999997584
+    }
+  },
+  "Q2": {
+    "name": "Q2 Newton targeting",
+    "coast_time_s": 103.63160525891549,
+    "rate_deg_s": -0.047364858242920735,
+    "burn_time_s": 398.04897080365663,
+    "stage2_prop_used_kg": 57985.28415538096,
+    "theta0_rad": 0.40366671088149364,
+    "iterations": [
+      {
+        "iteration": 0,
+        "coast_time_s": 100.0,
+        "pitch_rate_deg_s": -0.05,
+        "burn_time_s": 398.0,
+        "residual_norm": 9.243692045594367,
+        "jacobian_condition": 2333.7877639583394,
+        "scaled_correction_norm": 0.0646039432554199
+      },
+      {
+        "iteration": 1,
+        "coast_time_s": 103.66756432062648,
+        "pitch_rate_deg_s": -0.0473408898794935,
+        "burn_time_s": 398.0469069679512,
+        "residual_norm": 0.09778924394898565,
+        "jacobian_condition": 2289.3962841658276,
+        "scaled_correction_norm": 0.0005995618731005097
+      },
+      {
+        "iteration": 2,
+        "coast_time_s": 103.63160815099654,
+        "pitch_rate_deg_s": -0.047364856728988845,
+        "burn_time_s": 398.04897064509913,
+        "residual_norm": 8.994602963734029e-06,
+        "jacobian_condition": 2289.842483502623,
+        "scaled_correction_norm": 4.190135125922935e-08
+      },
+      {
+        "iteration": 3,
+        "coast_time_s": 103.63160525891549,
+        "pitch_rate_deg_s": -0.047364858242920735,
+        "burn_time_s": 398.04897080365663,
+        "residual_norm": 3.8142270867070644e-11,
+        "jacobian_condition": 2289.842520453531,
+        "scaled_correction_norm": 2.564374120736588e-13
+      }
+    ],
+    "terminal": {
+      "height_km": 399.99999999997766,
+      "inertial_speed_m_s": 7672.598648383492,
+      "ground_relative_speed_m_s": 7178.8494807944935,
+      "radial_speed_m_s": 4.5254600067323736e-10,
+      "tangential_speed_m_s": 7672.598648383492,
+      "flight_path_deg": 3.379425545680521e-12,
+      "mass_kg": 22014.71584461795
+    },
+    "residual_norm": 1.6022517918220335e-10
+  },
+  "Q3": {
+    "nodes": 31,
+    "coast_time_s": 4.37386348135387,
+    "burn_time_s": 394.35337248592367,
+    "stage2_prop_used_kg": 57446.93250948864,
+    "max_collocation_defect": 1.0498546476611637e-14,
+    "iterations": 3,
+    "history": [
+      {
+        "iteration": 0,
+        "burn_time_s": 394.3533688002099,
+        "max_equality_residual": 8.844269980983789e-09
+      },
+      {
+        "iteration": 1,
+        "burn_time_s": 394.35337248592367,
+        "max_equality_residual": 1.0498546476611637e-14
+      },
+      {
+        "iteration": 2,
+        "burn_time_s": 394.35337248592367,
+        "max_equality_residual": 1.0498546476611637e-14
+      }
+    ],
+    "verification": {
+      "terminal": {
+        "height_km": 400.0000321937697,
+        "inertial_speed_m_s": 7672.59818691229,
+        "ground_relative_speed_m_s": 7178.849016975682,
+        "radial_speed_m_s": 5.6679398094089395e-05,
+        "tangential_speed_m_s": 7672.59818691229,
+        "flight_path_deg": 4.2325822583445664e-07,
+        "mass_kg": 22553.067490516696
+      },
+      "scaled_terminal_residual": [
+        3.219376970082521e-05,
+        5.667939809408939e-06,
+        -4.6147272314556176e-05
+      ],
+      "terminal_residual_norm": 5.655205647283445e-05
+    }
+  },
+  "Q4": {
+    "name": "Q4 throttle optimal control",
+    "nodes": 31,
+    "seed_throttle": 1.0,
+    "coast_time_s": 4.37386348135387,
+    "burn_time_s": 394.35337248592367,
+    "stage2_prop_used_kg": 57446.93250948864,
+    "throttles": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "max_collocation_defect": 1.0498546476611637e-14,
+    "iterations": 1,
+    "constant_throttle_audit": [
+      {
+        "throttle": 1.0,
+        "coast_time_s": 4.37386348135387,
+        "burn_time_s": 394.35337248592367,
+        "stage2_prop_used_kg": 57446.93250948864,
+        "max_collocation_defect": 1.0498546476611637e-14,
+        "iterations": 1
+      },
+      {
+        "throttle": 0.9,
+        "coast_time_s": 0.0,
+        "burn_time_s": 438.52968453332335,
+        "stage2_prop_used_kg": 57494.03518166476,
+        "max_collocation_defect": 2.611395474860778e-12,
+        "iterations": 25
+      },
+      {
+        "throttle": 0.8,
+        "coast_time_s": 4.0225597608465997e-16,
+        "burn_time_s": 494.6252066295479,
+        "stage2_prop_used_kg": 57643.1248625952,
+        "max_collocation_defect": 2.7021787585290724e-14,
+        "iterations": 29
+      },
+      {
+        "throttle": 0.7,
+        "coast_time_s": 1.1098464879091503e-15,
+        "burn_time_s": 568.5823715031482,
+        "stage2_prop_used_kg": 57979.266263519996,
+        "max_collocation_defect": 1.1437385760704188e-11,
+        "iterations": 51
+      },
+      {
+        "throttle": 0.6,
+        "coast_time_s": 0.0,
+        "burn_time_s": 671.8937783290365,
+        "stage2_prop_used_kg": 58726.36964238144,
+        "max_collocation_defect": 7.334084728416457e-12,
+        "iterations": 38
+      }
+    ],
+    "multistart_audit": [
+      {
+        "seed_throttle": 1.0,
+        "coast_time_s": 4.37386348135387,
+        "burn_time_s": 394.35337248592367,
+        "stage2_prop_used_kg": 57446.93250948864,
+        "throttle_min": 1.0,
+        "throttle_max": 1.0,
+        "max_collocation_defect": 1.0498546476611637e-14,
+        "iterations": 1
+      },
+      {
+        "seed_throttle": 0.9,
+        "coast_time_s": 4.282681701152132,
+        "burn_time_s": 394.4414443111953,
+        "stage2_prop_used_kg": 57446.93445632052,
+        "throttle_min": 0.9866050899750863,
+        "throttle_max": 1.0,
+        "max_collocation_defect": 1.362493798340303e-11,
+        "iterations": 185
+      },
+      {
+        "seed_throttle": 0.8,
+        "coast_time_s": 3.8087768906640824,
+        "burn_time_s": 396.1790570230467,
+        "stage2_prop_used_kg": 57446.99622538893,
+        "throttle_min": 0.805263464875524,
+        "throttle_max": 1.0,
+        "max_collocation_defect": 1.1632160512586864e-11,
+        "iterations": 167
+      },
+      {
+        "seed_throttle": 0.7,
+        "coast_time_s": 3.640059157461382,
+        "burn_time_s": 397.3319762490927,
+        "stage2_prop_used_kg": 57447.02189623421,
+        "throttle_min": 0.6563685766623673,
+        "throttle_max": 1.0,
+        "max_collocation_defect": 7.841328281132931e-12,
+        "iterations": 252
+      },
+      {
+        "seed_throttle": 0.6,
+        "coast_time_s": 3.4047599765812455,
+        "burn_time_s": 397.94467426448114,
+        "stage2_prop_used_kg": 57447.03050175545,
+        "throttle_min": 0.6004736382662635,
+        "throttle_max": 1.0,
+        "max_collocation_defect": 4.265185427065887e-12,
+        "iterations": 362
+      }
+    ],
+    "verification": {
+      "terminal": {
+        "height_km": 400.0000321937697,
+        "inertial_speed_m_s": 7672.59818691229,
+        "ground_relative_speed_m_s": 7178.849016975682,
+        "radial_speed_m_s": 5.6679398094089395e-05,
+        "tangential_speed_m_s": 7672.59818691229,
+        "flight_path_deg": 4.2325822583445664e-07,
+        "mass_kg": 22553.067490516696
+      },
+      "scaled_terminal_residual": [
+        3.219376970082521e-05,
+        5.667939809408939e-06,
+        -4.6147272314556176e-05
+      ],
+      "terminal_residual_norm": 5.655205647283445e-05
+    }
+  }
+}

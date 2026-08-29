@@ -14,14 +14,17 @@
 │   ├── q2_inscription.py   # 问题2：入轨条件有界三维打靶（least_squares + 196 组多初值）
 │   ├── q34_direct_collocation.py # 问题3/4：Hermite-Simpson直接配点 + CasADi/Ipopt
 │   └── run_all.py          # 一键复现：Q1→Q4→图表
+├── cross_validation/       # 独立交叉验证实现（RK4 + scipy 配点，无 CasADi 依赖）
+│   ├── code/rocket_trajectory_solution.py  # 完整独立求解器（840 行）
+│   └── results/            # 网格收敛 / 多初值审计 / 节流灵敏度 / 损失预算
 ├── legacy/shooting_baseline/  # 旧版单重打靶求解器与结果（仅方法对比，非权威）
 ├── 论文/                   # 参赛论文（LaTeX，cumcmthesis 模板）
 │   ├── main.tex            # 论文正文（四问模型、算法、结果、评价）
-│   └── main.pdf            # 编译产物（24 页）
+│   └── main.pdf            # 编译产物（25 页）
 ├── figures/                # 论文插图（PNG，由 src/ 生成）
 ├── figures_src/            # 示意图源（SVG 矢量 + 生成脚本）
 ├── results/                # 权威数值结果（CSV：summary/trajectory/convergence）
-├── tests/                  # 回归测试（pytest，8 项）
+├── tests/                  # 回归测试 + 交叉验证测试（pytest）
 ├── 文献/                   # 参考文献（中外期刊论文 + 开源求解器代码）
 └── requirements.txt        # Python 依赖
 ```
@@ -53,6 +56,19 @@ cd 论文 && xelatex main.tex && xelatex main.tex
 ```
 
 **结果链约定**：`results/` 是论文唯一数据源（Q1--Q4 的 summary 与控制节点以 17 位有效数字保存）；`legacy/` 中的旧版单重打靶结果仅供方法对比，不作为论文数字来源。
+
+## 双实现交叉验证
+
+本仓库包含**两套完全独立的实现**，`tests/test_cross_validation.py` 自动对比它们：
+
+| 维度 | 主实现（`src/`） | 交叉验证实现（`cross_validation/`） |
+|---|---|---|
+| 积分器 | DOP853 自适应 | 固定步长经典 RK4 |
+| Q2 求解 | `least_squares` 有界打靶 | Newton 预测-校正 + 回溯线搜索 |
+| Q3/Q4 | Hermite-Simpson + CasADi/Ipopt | Hermite-Simpson + scipy 优化器 |
+| 坐标系 | 惯性笛卡尔 | 极坐标/径向-切向分量 |
+
+两套实现独立给出 **Q1 燃尽 433.53 km/8521.18 m/s、Q2 解 (103.63 s, −0.0474°/s, 398.05 s)、Q3 最优耗药 57446.93 kg**——完全一致（Q3 差 0.002 kg，在数值容差内）。交叉验证实现还贡献了论文 §7.3.2/§7.4.3-7.4.6 的四组证据：三档网格收敛、五档节流初值审计、恒定节流灵敏度定量结果、速度损失预算。
 
 ## 核心建模
 
