@@ -36,3 +36,5 @@ figures_src/_update_tex.py
 论文/_chk_*.png
 figures_src/_de_experiment*.py
 figures/
+论文/fig_pitch_laws.pdf
+论文/fig_q4_framework.pdf
