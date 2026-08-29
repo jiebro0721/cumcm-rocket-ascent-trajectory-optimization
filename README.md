@@ -16,18 +16,21 @@
 │   └── run_all.py          # 一键复现：Q1→Q4→图表
 ├── cross_validation/       # 独立交叉验证实现（RK4 + scipy 配点，无 CasADi 依赖）
 │   ├── code/rocket_trajectory_solution.py  # 完整独立求解器（840 行）
-│   └── results/            # 网格收敛 / 多初值审计 / 节流灵敏度 / 损失预算
+│   └── results/            # 网格收敛 / 多初值审计 / 节流灵敏度 / 损失预算 / RK4 轨迹
 ├── legacy/shooting_baseline/  # 旧版单重打靶求解器与结果（仅方法对比，非权威）
 ├── 论文/                   # 参赛论文（LaTeX，cumcmthesis 模板）
 │   ├── main.tex            # 论文正文（四问模型、算法、结果、评价）
 │   └── main.pdf            # 编译产物（25 页）
-├── figures/                # 论文插图（PNG，由 src/ 生成）
 ├── figures_src/            # 示意图源（SVG 矢量 + 生成脚本）
 ├── results/                # 权威数值结果（CSV：summary/trajectory/convergence）
 ├── tests/                  # 回归测试 + 交叉验证测试（pytest）
+├── docs/                   # 审阅报告归档、队友文献整理
 ├── 文献/                   # 参考文献（中外期刊论文 + 开源求解器代码）
+├── CONTRIBUTING.md         # 贡献指南
 └── requirements.txt        # Python 依赖
 ```
+
+> 论文插图（PDF）随 `论文/` 目录一同提交；中间生成的 PNG/CSV 由 `src/run_all.py` 或 `figures_src/` 脚本再生成。
 
 ## 运行环境与依赖
 

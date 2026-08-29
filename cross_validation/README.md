@@ -27,7 +27,12 @@
 
 - `code/rocket_trajectory_solution.py`：独立求解器（840 行，可独立运行）
 - `results/results.json`：全部结果（Q1-Q4 + 常数/方法说明）
-- `results/q3_mesh_convergence.csv`：三档网格收敛
-- `results/q4_constant_throttle_sensitivity.csv`：恒节流灵敏度
-- `results/q4_multistart_audit.csv`：多初值审计
-- `results/second_stage_loss_budget.csv`：速度损失预算
+- `results/q3_mesh_convergence.csv`：三档网格收敛（11/21/31 节点）
+- `results/q4_constant_throttle_sensitivity.csv`：恒节流灵敏度（σ=0.6~1.0）
+- `results/q4_multistart_audit.csv`：多初值审计（五档节流初值）
+- `results/second_stage_loss_budget.csv`：速度损失预算（Q2/Q3 重力+转向损失）
+- `results/rk4_step_convergence.csv`：RK4 步长收敛性（证明独立传播器精度）
+- `results/q2_newton_iterations.csv`：Q2 Newton 预测-校正迭代过程
+- `results/q{n}_rk4_trajectory.csv`：各问题 RK4 完整轨迹（与主实现笛卡尔轨迹可比）
+- `results/intermediate_phase_states.csv`：各阶段衔接点状态
+- `results/figures/*.png`：独立实现的轨迹/控制律图（optimized_controls、q1_baseline_history、trajectory_comparison）
