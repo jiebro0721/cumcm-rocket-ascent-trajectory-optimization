@@ -149,17 +149,20 @@ def fig_flight_profile():
         ax.text((x0 + x1) / 2 + 0.05, y - 16, sub, fontsize=FS_TEXT - 1,
                 ha="left", color="#555")
 
-    # 区间箭头逐层抬高；垂直起飞段极窄，用单侧箭头+右移标签防止重叠
-    seg_arrow_tail(0.008, 0.032, 40, "垂直起飞段", "0–10 s", "#111")
-    seg_arrow(0.05, 0.225, 92, "程序转弯段", "10 s – $t_1$", "#111")
+    # 区间箭头逐层抬高；垂直起飞段极窄：标签置于左下空旷区 + 细参考线
+    ax.plot([0.018, 0.018], [26, 46], color="#111", lw=1.4)
+    ax.plot([0.008, 0.030], [46, 46], color="#111", lw=1.4)
+    ax.text(0.004, 2, "垂直起飞段\n0–10 s", fontsize=FS_TEXT,
+            ha="left", va="bottom", color="#111")
+    seg_arrow(0.05, 0.225, 100, "程序转弯段", "10 s – $t_1$", "#111")
     seg_arrow(0.245, 0.475, 148, "无动力滑行段", "$t_1$ – $t_2$", "#8a6d3b")
     seg_arrow(0.495, 0.995, 190, "入轨修正段", "$t_2$ – $t_3$", "#b23c3c")
 
-    # 关键时刻标注（t1/t2 放曲线上方，t3 放曲线下方远离曲线）
+    # 关键时刻标注（t3 再下移远离曲线）
     for x, label, y, ha, dy in [
         (tb1, "$t_1$ 一级关机", 208, "center", 26),
         (tb2, "$t_2$ 二级点火", 272, "center", 26),
-        (tb3, "$t_3$ 关机入轨", 400, "center", -34),
+        (tb3, "$t_3$ 关机入轨", 400, "center", -38),
     ]:
         ax.plot(x, y, "o", ms=7, color="#1F4E79")
         ax.text(x, y + dy, label, fontsize=FS_TEXT, ha=ha, color="#333")

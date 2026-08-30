@@ -144,16 +144,18 @@ x(0)=R_E,\quad y(0)=0,\quad v_x(0)=0,\quad v_y(0)=\omega_E R_E,\quad m(0)=M_0.
 
 \begin{figure}[!ht]
 \centering
-\includegraphics[width=0.55\textwidth]{fig_frame_a}
+\begin{minipage}[c]{0.60\textwidth}
+\centering
+\includegraphics[width=0.88\textwidth]{fig_frame_a}
 \caption{地心惯性坐标系}
 \label{fig:frame_a}
-\end{figure}
-
-\begin{figure}[!ht]
+\end{minipage}\hfill
+\begin{minipage}[c]{0.40\textwidth}
 \centering
-\includegraphics[width=0.42\textwidth]{fig_frame_b}
+\includegraphics[width=0.66\textwidth]{fig_frame_b}
 \caption{赤道平面内的局部基与角规定}
 \label{fig:frame_b}
+\end{minipage}
 \end{figure}
 
 \subsection{受力分析}
@@ -310,7 +312,7 @@ v_r=\bm v\cdot\bm{\hat r},\quad v_t=\bm v\cdot\bm{\hat t}.
 \end{equation}
 式 \eqref{eq:sep-def} 中右上标 $+$/$-$ 分别表示分离前瞬间的状态。这一表达式明确了位置、速度在阶段连接处连续，而一级分离只改变质量。
 
-\subsubsection{数值积分方法：自适应高阶 Runge--Kutta（DOP853）}
+\subsubsection{自适应高阶 Runge--Kutta（DOP853）}
 各段的常微分方程 $\dot{\bm x}=\bm f(\bm x,t)$ 采用 DOP853 方法求解——它是基于 Dormand--Prince 公式的 8 阶显式 Runge--Kutta 方法，其 13 级评估同时给出 8 阶主解 $\bm y_{n+1}$ 与 5 阶嵌入解 $\hat{\bm y}_{n+1}$，两者之差即局部误差估计。单步数学过程如下：
 
 \textbf{Step 1：}给定当前步长 $h$，按 Dormand--Prince 系数计算 13 个中间斜率
@@ -951,13 +953,13 @@ YAPSS Documentation. Delta III launch vehicle ascent problem[EB/OL]. \url{https:
 % 附录：支撑材料说明（按全国大学生数学建模竞赛论文格式规范第五条）
 \begin{appendices}
 \section{支撑材料文件列表}
-本论文的全部建模、求解与验证程序代码随支撑材料一并提交，完整源代码见附录 A--F，附件文件列表如表 \ref{tab:appendix-files} 所示。
+本论文的全部建模、求解与验证程序代码随支撑材料一并提交，关键源代码见附录 A--D，附件文件列表如表 \ref{tab:appendix-files} 所示。
 
 \begin{table}[!htbp]
 \caption{附件文件列表}
 \label{tab:appendix-files}
 \centering
-\begin{tabular}{p{0.32\textwidth}|p{0.50\textwidth}}
+\begin{tabular}{p{0.42\textwidth}|p{0.44\textwidth}}
 \toprule[1.5pt]
 文件 & 说明 \\
 \midrule[1pt]
@@ -965,10 +967,10 @@ YAPSS Documentation. Delta III launch vehicle ascent problem[EB/OL]. \url{https:
 \texttt{src/q1\_baseline.py} & 问题一基准控制策略全程仿真（附录 B） \\
 \texttt{src/q2\_inscription.py} & 问题二入轨条件有界三维打靶（附录 C） \\
 \texttt{src/q34\_direct\_collocation.py} & 问题三、四 Hermite--Simpson 直接配点求解器（附录 D） \\
-\texttt{src/run\_all.py} & 一键复现脚本（附录 E） \\
-\texttt{cross\_validation/} & 独立实现 RK4 + scipy 配点的交叉验证代码（附录 F）、结果与说明 \\
+\texttt{src/run\_all.py} & 一键复现脚本 \\
+\texttt{cross\_validation/} & 独立实现 RK4 + scipy 配点的交叉验证代码、结果与说明 \\
 \texttt{figures\_src/\_sensitivity.py} & 参数灵敏度与开环控制鲁棒性实验数据来源 \\
-\texttt{figures\_src/\_gen\_flow.py} & 直接配点求解流程图生成脚本 \\
+\texttt{figures\_src/\_gen\_colloc\_demo.py} & 直接配点法示意图生成脚本 \\
 \texttt{tests/} & 配点数学检查与模型约束回归测试 \\
 \texttt{results/} & 全部权威数值结果 \\
 \bottomrule[1.5pt]
