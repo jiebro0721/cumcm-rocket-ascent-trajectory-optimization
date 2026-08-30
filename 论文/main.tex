@@ -118,12 +118,9 @@ $r$ & 地心距 $r=\sqrt{x^2+y^2}$ & m & $h$ & 高度 $h=r-R_E$ & m \\
 $T$ & 推力大小 & N & $g_0$ & 海平面重力加速度 & m/s$^2$ \\
 $\mu$ & 地球引力常数 & m$^3$/s$^2$ & $R_E$ & 地球半径 & m \\
 $\omega_E$ & 地球自转角速度 & rad/s & $\rho$ & 大气密度 & kg/m$^3$ \\
-$S,C_D$ & 阻力参考面积/阻力系数 & m$^2$,-- & $I_{sp}$ & 真空比冲 & s \\
-$v_{\rm rel}$ & 相对大气速度 & m/s & $\sigma$ & 推力节流比 & -- \\
 $\phi$ & 推力与当地水平面夹角 & $^\circ$ & $\gamma$ & 惯性速度与当地水平面夹角 & $^\circ$ \\
 $t_c$ & 无动力滑行时间 & s & $k$ & 二子级俯仰角变化率 & $^\circ$/s \\
-$t_b$ & 二级燃烧时间 $t_b=t_3-t_2$ & s & $t_1,t_2,t_3$ & 一级关机/二级点火/二级关机时刻 & s \\
-$\bm{\hat r},\bm{\hat t}$ & 当地径向/东向单位向量 & -- & & & \\
+$t_b$ & 二级燃烧时间 & s & $t_1,t_2,t_3$ & 一级关机/二级点火/二级关机时刻 & s \\
 \bottomrule[1.5pt]
 \end{tabular}
 \end{center}
@@ -196,7 +193,7 @@ g_x=-\frac{\mu x}{r^{3}},\qquad g_y=-\frac{\mu y}{r^{3}}.
 v_{{\rm rel},x}=v_x+\omega_E y,\qquad v_{{\rm rel},y}=v_y-\omega_E x.
 \label{eq:vrelcomp}
 \end{equation}
-阻力方向与相对速度方向相反，大小由动压、参考面积与阻力系数决定。动压为
+阻力方向与相对速度方向相反，大小由动压、参考面积与阻力系数决定。记阻力参考面积为 $S$、阻力系数为 $C_D$，则动压为
 \begin{equation}
 q=\frac{1}{2}\rho(h)|\bm v_{\rm rel}|^{2},
 \label{eq:dynq}
