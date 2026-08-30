@@ -60,9 +60,7 @@ def plot_profiles(result, question, t2, t3, fname, prop_used):
     axes[1, 1].grid(alpha=0.3)
     axes[1, 1].set_title("d 总质量", fontsize=12)
 
-    fig.suptitle("问题%s 最优轨迹（滑行 %.3f s + 燃烧 %.3f s，耗药 %.1f kg）"
-                 % (question, t2 - 149.06, t3 - t2, prop_used),
-                 fontsize=13)
+    fig.suptitle("问题%s 最优轨迹" % question, fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(OUT + "/" + fname, dpi=150)
     plt.close(fig)
